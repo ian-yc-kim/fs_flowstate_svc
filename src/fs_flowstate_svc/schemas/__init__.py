@@ -1,1 +1,1 @@
-# Empty
+from .inbox_schemas import *
