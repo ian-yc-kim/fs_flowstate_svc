@@ -43,9 +43,9 @@ class TestInitialMigration:
         """Test that users table has correct columns and constraints."""
         inspector = inspect(clean_db_session.bind)
         
-        # Check columns
+        # Check columns - including password reset columns added in migration d77aa19050d6
         columns = {col['name']: col for col in inspector.get_columns('users')}
-        expected_columns = {'id', 'username', 'email', 'password_hash', 'created_at', 'updated_at'}
+        expected_columns = {'id', 'username', 'email', 'password_hash', 'password_reset_token', 'password_reset_expires_at', 'created_at', 'updated_at'}
         assert set(columns.keys()) == expected_columns
         
         # Check primary key
