@@ -1,6 +1,6 @@
-import os
-from dotenv import load_dotenv
+import logging
 from fs_flowstate_svc.models import Base
+from fs_flowstate_svc.config import settings
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
@@ -13,9 +13,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-load_dotenv()
-database_url = os.getenv("DATABASE_URL")
-config.set_main_option('sqlalchemy.url', database_url)
+try:
+    database_url = settings.DATABASE_URL
+    config.set_main_option('sqlalchemy.url', database_url)
+except Exception as e:
+    logging.error(e, exc_info=True)
+    raise
 
 target_metadata = Base.metadata
 
