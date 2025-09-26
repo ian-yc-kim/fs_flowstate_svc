@@ -104,6 +104,13 @@ class ReminderSettings(Base):
     lead_time_minutes: int = Column(Integer, nullable=False)
     reminder_type: str = Column(String, nullable=False)
     is_active: bool = Column(Boolean, default=True, nullable=False)
+    # New fields for tracking reminder delivery status and notification methods
+    status: str = Column(String, nullable=False, default='pending', index=True)
+    notification_method: str = Column(String, nullable=False, default='in-app')
+    delivery_attempted_at: Optional[DateTime] = Column(DateTime, nullable=True)
+    delivery_succeeded_at: Optional[DateTime] = Column(DateTime, nullable=True)
+    failure_reason: Optional[str] = Column(Text, nullable=True)
+    reminder_metadata: Optional[dict] = Column(CrossDBJSON, nullable=True)
     created_at: DateTime = Column(DateTime, default=func.now(), nullable=False)
     updated_at: DateTime = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     
@@ -112,7 +119,7 @@ class ReminderSettings(Base):
     event = relationship("Events", back_populates="reminder_settings")
     
     def __repr__(self) -> str:
-        return f"<ReminderSettings(id={self.id}, reminder_type='{self.reminder_type}', user_id={self.user_id})>"
+        return f"<ReminderSettings(id={self.id}, reminder_type='{self.reminder_type}', status='{self.status}', user_id={self.user_id})>"
 
 
 class AISettings(Base):
