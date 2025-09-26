@@ -1,19 +1,19 @@
-"""Create flowstate database models with JSON support
+"""Create initial FlowState database models
 
-Revision ID: 2c1b2fd6eb95
+Revision ID: 286e24990b8e
 Revises: 
-Create Date: 2025-09-26 06:21:06.376543
+Create Date: 2025-09-26 07:46:27.831289
 
 """
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
+from fs_flowstate_svc.models.flowstate_models import CrossDBJSON
 
 
 # revision identifiers, used by Alembic.
-revision: str = '2c1b2fd6eb95'
+revision: str = '286e24990b8e'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -35,7 +35,7 @@ def upgrade() -> None:
     op.create_table('ai_settings',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('user_id', sa.UUID(), nullable=False),
-    sa.Column('productivity_profile', postgresql.JSONB(astext_type=sa.Text()) if op.get_bind().dialect.name == 'postgresql' else sa.JSON(), nullable=False),
+    sa.Column('productivity_profile', CrossDBJSON(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
