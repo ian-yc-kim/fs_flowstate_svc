@@ -28,6 +28,8 @@ class Users(Base):
     username: str = Column(String, unique=True, nullable=False)
     email: str = Column(String, unique=True, nullable=False)
     password_hash: str = Column(String, nullable=False)
+    password_reset_token: Optional[str] = Column(String, unique=True, nullable=True)
+    password_reset_expires_at: Optional[DateTime] = Column(DateTime, nullable=True)
     created_at: DateTime = Column(DateTime, default=func.now(), nullable=False)
     updated_at: DateTime = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     

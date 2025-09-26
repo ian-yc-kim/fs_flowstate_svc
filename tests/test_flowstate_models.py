@@ -26,6 +26,126 @@ class TestUsersModel:
         assert user.created_at is not None
         assert user.updated_at is not None
     
+    def test_create_user_with_password_reset_defaults(self, db_session):
+        """Test that a user can be created with password_reset_token and password_reset_expires_at as None."""
+        user = Users(
+            username="testuser",
+            email="test@example.com",
+            password_hash="hashed_password_123"
+        )
+        db_session.add(user)
+        db_session.commit()
+        
+        # Verify password reset columns default to None
+        assert user.password_reset_token is None
+        assert user.password_reset_expires_at is None
+    
+    def test_password_reset_token_can_be_set_and_updated(self, db_session):
+        """Test that password_reset_token can be set and updated correctly."""
+        user = Users(
+            username="testuser",
+            email="test@example.com",
+            password_hash="hashed_password_123"
+        )
+        db_session.add(user)
+        db_session.commit()
+        
+        # Set password reset token and expiry
+        reset_token = "reset_token_123"
+        expires_at = datetime.now() + timedelta(hours=1)
+        
+        user.password_reset_token = reset_token
+        user.password_reset_expires_at = expires_at
+        db_session.commit()
+        
+        # Verify the values were set correctly
+        db_session.refresh(user)
+        assert user.password_reset_token == reset_token
+        assert user.password_reset_expires_at == expires_at
+        
+        # Update the password reset token
+        new_reset_token = "new_reset_token_456"
+        new_expires_at = datetime.now() + timedelta(hours=2)
+        
+        user.password_reset_token = new_reset_token
+        user.password_reset_expires_at = new_expires_at
+        db_session.commit()
+        
+        # Verify the values were updated correctly
+        db_session.refresh(user)
+        assert user.password_reset_token == new_reset_token
+        assert user.password_reset_expires_at == new_expires_at
+    
+    def test_password_reset_token_unique_constraint(self, db_session):
+        """Test the unique constraint on password_reset_token by attempting to set the same token for two different users."""
+        user1 = Users(
+            username="user1",
+            email="user1@example.com",
+            password_hash="hash1"
+        )
+        user2 = Users(
+            username="user2",
+            email="user2@example.com",
+            password_hash="hash2"
+        )
+        
+        db_session.add(user1)
+        db_session.add(user2)
+        db_session.commit()
+        
+        # Set the same password reset token for both users
+        same_token = "duplicate_token_123"
+        
+        user1.password_reset_token = same_token
+        db_session.commit()  # This should succeed
+        
+        user2.password_reset_token = same_token
+        
+        # This should raise IntegrityError due to unique constraint
+        with pytest.raises(IntegrityError):
+            db_session.commit()
+        
+        # Rollback the failed transaction
+        db_session.rollback()
+        
+        # Verify that user1 still has the token and user2 doesn't
+        db_session.refresh(user1)
+        db_session.refresh(user2)
+        assert user1.password_reset_token == same_token
+        assert user2.password_reset_token is None
+    
+    def test_password_reset_token_null_values_allowed(self, db_session):
+        """Test that multiple users can have NULL password_reset_token values (unique constraint only applies to non-null)."""
+        user1 = Users(
+            username="user1",
+            email="user1@example.com",
+            password_hash="hash1"
+        )
+        user2 = Users(
+            username="user2",
+            email="user2@example.com",
+            password_hash="hash2"
+        )
+        
+        db_session.add(user1)
+        db_session.add(user2)
+        db_session.commit()
+        
+        # Both users should have NULL password_reset_token by default
+        assert user1.password_reset_token is None
+        assert user2.password_reset_token is None
+        
+        # Setting one user's token to None explicitly should not cause issues
+        user1.password_reset_token = None
+        user2.password_reset_token = None
+        db_session.commit()
+        
+        # Verify both users still have None values
+        db_session.refresh(user1)
+        db_session.refresh(user2)
+        assert user1.password_reset_token is None
+        assert user2.password_reset_token is None
+    
     def test_username_unique_constraint(self, db_session):
         """Test that username must be unique."""
         user1 = Users(username="testuser", email="test1@example.com", password_hash="hash1")
