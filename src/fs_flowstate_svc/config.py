@@ -17,6 +17,14 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(..., validation_alias="SECRET_KEY", min_length=32)
     JWT_SECRET_KEY: SecretStr = Field(default="jwt_development_secret_key_32_chars", validation_alias="JWT_SECRET_KEY", min_length=32)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    DEFAULT_PREPARATION_TIMES: dict[str, int] = Field(
+        default_factory=lambda: {
+            "meeting": 10,
+            "deep work": 15,
+            "travel": 30,
+            "general": 5
+        }
+    )
 
 
 # Module-level settings instance
