@@ -64,11 +64,11 @@ class TestInitialMigration:
         """Test that events table has correct columns, constraints and indexes."""
         inspector = inspect(clean_db_session.bind)
         
-        # Check columns
+        # Check columns - including metadata column added in migration d9d977559d32
         columns = {col['name']: col for col in inspector.get_columns('events')}
         expected_columns = {
             'id', 'user_id', 'title', 'description', 'start_time', 'end_time', 
-            'category', 'is_all_day', 'is_recurring', 'created_at', 'updated_at'
+            'category', 'is_all_day', 'is_recurring', 'metadata', 'created_at', 'updated_at'
         }
         assert set(columns.keys()) == expected_columns
         

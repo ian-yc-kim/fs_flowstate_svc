@@ -55,8 +55,15 @@ class Events(Base):
     category: Optional[str] = Column(String, nullable=True)
     is_all_day: bool = Column(Boolean, default=False, nullable=False)
     is_recurring: bool = Column(Boolean, default=False, nullable=False)
+    event_metadata: Optional[dict] = Column("metadata", CrossDBJSON, nullable=True)
     created_at: DateTime = Column(DateTime, default=func.now(), nullable=False)
     updated_at: DateTime = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    
+    def __init__(self, **kwargs):
+        # Handle event_metadata default: empty dict when not provided, preserve None when explicitly set
+        if 'event_metadata' not in kwargs:
+            kwargs['event_metadata'] = {}
+        super().__init__(**kwargs)
     
     # Relationships
     user = relationship("Users", back_populates="events")

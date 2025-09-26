@@ -218,6 +218,191 @@ class TestEventsModel:
         assert event.is_all_day == False
         assert event.is_recurring == True
     
+    def test_event_metadata_defaults_to_empty_dict(self, db_session):
+        """Test that an Events object can be created without specifying event_metadata, and it defaults to an empty dictionary."""
+        user = Users(username="testuser", email="test@example.com", password_hash="hash")
+        db_session.add(user)
+        db_session.commit()
+        
+        event = Events(
+            user_id=user.id,
+            title="Test Event",
+            start_time=datetime.now(),
+            end_time=datetime.now() + timedelta(hours=1)
+        )
+        db_session.add(event)
+        db_session.commit()
+        
+        # Verify event_metadata defaults to empty dictionary
+        assert event.event_metadata == {}
+        
+        # Refresh and verify the value persists
+        db_session.refresh(event)
+        assert event.event_metadata == {}
+    
+    def test_event_metadata_with_dictionary_value(self, db_session):
+        """Test that an Events object can be created with a dictionary value for event_metadata, and it's correctly stored."""
+        user = Users(username="testuser", email="test@example.com", password_hash="hash")
+        db_session.add(user)
+        db_session.commit()
+        
+        test_metadata = {
+            "priority": "high",
+            "tags": ["important", "work"],
+            "attendees_count": 5,
+            "location": "Conference Room A"
+        }
+        
+        event = Events(
+            user_id=user.id,
+            title="Test Event with Metadata",
+            start_time=datetime.now(),
+            end_time=datetime.now() + timedelta(hours=1),
+            event_metadata=test_metadata
+        )
+        db_session.add(event)
+        db_session.commit()
+        
+        # Verify event_metadata is stored correctly
+        assert event.event_metadata == test_metadata
+        
+        # Refresh and verify persistence
+        db_session.refresh(event)
+        assert event.event_metadata == test_metadata
+    
+    def test_event_metadata_retrieval(self, db_session):
+        """Test that an Events object can be retrieved, and its event_metadata field holds the expected dictionary."""
+        user = Users(username="testuser", email="test@example.com", password_hash="hash")
+        db_session.add(user)
+        db_session.commit()
+        
+        test_metadata = {
+            "reminder_sent": True,
+            "custom_fields": {
+                "budget": 1000,
+                "status": "confirmed"
+            }
+        }
+        
+        event = Events(
+            user_id=user.id,
+            title="Retrievable Event",
+            start_time=datetime.now(),
+            end_time=datetime.now() + timedelta(hours=1),
+            event_metadata=test_metadata
+        )
+        db_session.add(event)
+        db_session.commit()
+        
+        event_id = event.id
+        
+        # Retrieve event by ID
+        retrieved_event = db_session.get(Events, event_id)
+        assert retrieved_event is not None
+        assert retrieved_event.event_metadata == test_metadata
+    
+    def test_event_metadata_with_various_json_types(self, db_session):
+        """Test with various JSON-compatible data types within the dictionary (strings, numbers, booleans, lists, nested dictionaries)."""
+        user = Users(username="testuser", email="test@example.com", password_hash="hash")
+        db_session.add(user)
+        db_session.commit()
+        
+        complex_metadata = {
+            "string_field": "test string",
+            "integer_field": 42,
+            "float_field": 3.14159,
+            "boolean_field": True,
+            "null_field": None,
+            "list_field": ["item1", "item2", 123, True, None],
+            "nested_dict": {
+                "level2": {
+                    "level3": {
+                        "deep_value": "deep string",
+                        "deep_number": 999
+                    }
+                },
+                "another_field": [1, 2, 3]
+            }
+        }
+        
+        event = Events(
+            user_id=user.id,
+            title="Complex Metadata Event",
+            start_time=datetime.now(),
+            end_time=datetime.now() + timedelta(hours=1),
+            event_metadata=complex_metadata
+        )
+        db_session.add(event)
+        db_session.commit()
+        
+        # Verify complex event_metadata is stored and retrieved correctly
+        assert event.event_metadata == complex_metadata
+        
+        # Test retrieval after refresh
+        db_session.refresh(event)
+        assert event.event_metadata == complex_metadata
+        
+        # Test specific nested values
+        assert event.event_metadata["string_field"] == "test string"
+        assert event.event_metadata["integer_field"] == 42
+        assert event.event_metadata["float_field"] == 3.14159
+        assert event.event_metadata["boolean_field"] == True
+        assert event.event_metadata["null_field"] is None
+        assert event.event_metadata["list_field"] == ["item1", "item2", 123, True, None]
+        assert event.event_metadata["nested_dict"]["level2"]["level3"]["deep_value"] == "deep string"
+    
+    def test_event_metadata_update(self, db_session):
+        """Test that event_metadata can be updated on existing events."""
+        user = Users(username="testuser", email="test@example.com", password_hash="hash")
+        db_session.add(user)
+        db_session.commit()
+        
+        # Create event with initial event_metadata
+        initial_metadata = {"version": 1, "status": "draft"}
+        event = Events(
+            user_id=user.id,
+            title="Updatable Event",
+            start_time=datetime.now(),
+            end_time=datetime.now() + timedelta(hours=1),
+            event_metadata=initial_metadata
+        )
+        db_session.add(event)
+        db_session.commit()
+        
+        # Update event_metadata
+        updated_metadata = {"version": 2, "status": "published", "notes": "Updated event"}
+        event.event_metadata = updated_metadata
+        db_session.commit()
+        
+        # Verify update
+        db_session.refresh(event)
+        assert event.event_metadata == updated_metadata
+        assert event.event_metadata["version"] == 2
+        assert event.event_metadata["status"] == "published"
+        assert event.event_metadata["notes"] == "Updated event"
+    
+    def test_event_metadata_can_be_set_to_none(self, db_session):
+        """Test that event_metadata can be explicitly set to None."""
+        user = Users(username="testuser", email="test@example.com", password_hash="hash")
+        db_session.add(user)
+        db_session.commit()
+        
+        event = Events(
+            user_id=user.id,
+            title="Event with None Metadata",
+            start_time=datetime.now(),
+            end_time=datetime.now() + timedelta(hours=1),
+            event_metadata=None
+        )
+        db_session.add(event)
+        db_session.commit()
+        
+        # Verify event_metadata can be None
+        assert event.event_metadata is None
+        
+        db_session.refresh(event)
+        assert event.event_metadata is None
+    
     def test_event_user_relationship(self, db_session):
         """Test Events-Users relationship."""
         user = Users(username="testuser", email="test@example.com", password_hash="hash")
