@@ -20,13 +20,14 @@ class TestAPIDocumentation:
         # Check for Authentication section
         assert "## Authentication" in content, "API.md should contain Authentication section"
         
-        # Check for all required authentication endpoints
+        # Check for all required authentication endpoints with /users prefix
         required_endpoints = [
-            "POST /auth/register",
-            "POST /auth/login", 
-            "GET /auth/me",
-            "POST /auth/request-password-reset",
-            "POST /auth/reset-password"
+            "POST /users/register",
+            "POST /users/login", 
+            "GET /users/me",
+            "PUT /users/me",
+            "POST /users/request-password-reset",
+            "POST /users/reset-password"
         ]
         
         for endpoint in required_endpoints:

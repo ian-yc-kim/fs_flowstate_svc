@@ -8,13 +8,14 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from fs_flowstate_svc.models.base import get_db
+from fs_flowstate_svc.models.flowstate_models import Users
 from fs_flowstate_svc.schemas import user_schemas
 from fs_flowstate_svc.services import user_service
 
 logger = logging.getLogger(__name__)
 
 # Create auth router
-auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
+auth_router = APIRouter(prefix="/users", tags=["Authentication"])
 
 # Security scheme for bearer token
 security = HTTPBearer()
@@ -110,6 +111,42 @@ def get_current_user_info(current_user=Depends(get_current_user)):
         Current user information
     """
     return user_schemas.UserResponse.model_validate(current_user)
+
+
+@auth_router.put("/me", response_model=user_schemas.UserResponse)
+def update_current_user_profile(
+    user_update: user_schemas.UserUpdate,
+    current_user: Users = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update information for the current authenticated user.
+    
+    Args:
+        user_update: User update data
+        current_user: Current authenticated user (injected dependency)
+        db: Database session
+        
+    Returns:
+        Updated user information
+        
+    Raises:
+        HTTPException: If username or email already exists, or on server error
+    """
+    try:
+        updated_user = user_service.update_user(db, current_user.id, user_update)
+        return user_schemas.UserResponse.model_validate(updated_user)
+    except ValueError as e:
+        logger.error(f"User profile update failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e)  # e.g. "Username already exists" or "Email already exists" - propagate the specific error message.
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error during user profile update: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
 
 
 @auth_router.post("/request-password-reset")

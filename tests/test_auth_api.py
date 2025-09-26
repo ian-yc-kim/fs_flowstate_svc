@@ -25,7 +25,7 @@ class TestAuthAPI:
             "password": "password123"
         }
         
-        response = client.post("/auth/register", json=user_data)
+        response = client.post("/users/register", json=user_data)
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -55,7 +55,7 @@ class TestAuthAPI:
             "password": "password123"
         }
         
-        response = client.post("/auth/register", json=user_data)
+        response = client.post("/users/register", json=user_data)
         
         assert response.status_code == status.HTTP_409_CONFLICT
         assert "Username or email already exists" in response.json()["detail"]
@@ -81,7 +81,7 @@ class TestAuthAPI:
             "password": "password123"
         }
         
-        response = client.post("/auth/register", json=user_data)
+        response = client.post("/users/register", json=user_data)
         
         assert response.status_code == status.HTTP_409_CONFLICT
         assert "Username or email already exists" in response.json()["detail"]
@@ -98,7 +98,7 @@ class TestAuthAPI:
             "email": "incomplete@example.com"
         }
         
-        response = client.post("/auth/register", json=user_data)
+        response = client.post("/users/register", json=user_data)
         
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
     
@@ -122,7 +122,7 @@ class TestAuthAPI:
             "password": "correct_password"
         }
         
-        response = client.post("/auth/login", json=login_data)
+        response = client.post("/users/login", json=login_data)
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -136,7 +136,7 @@ class TestAuthAPI:
             "password": "correct_password"
         }
         
-        response = client.post("/auth/login", json=login_data)
+        response = client.post("/users/login", json=login_data)
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -163,7 +163,7 @@ class TestAuthAPI:
             "password": "wrong_password"
         }
         
-        response = client.post("/auth/login", json=login_data)
+        response = client.post("/users/login", json=login_data)
         
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert "Incorrect username or password" in response.json()["detail"]
@@ -179,7 +179,7 @@ class TestAuthAPI:
             "password": "any_password"
         }
         
-        response = client.post("/auth/login", json=login_data)
+        response = client.post("/users/login", json=login_data)
         
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert "Incorrect username or password" in response.json()["detail"]
@@ -203,12 +203,12 @@ class TestAuthAPI:
             "username_or_email": "currentuser",
             "password": "password123"
         }
-        login_response = client.post("/auth/login", json=login_data)
+        login_response = client.post("/users/login", json=login_data)
         token = login_response.json()["access_token"]
         
         # Get current user info
         headers = {"Authorization": f"Bearer {token}"}
-        response = client.get("/auth/me", headers=headers)
+        response = client.get("/users/me", headers=headers)
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -222,7 +222,7 @@ class TestAuthAPI:
         monkeypatch.setenv("SECRET_KEY", "x" * 32)
         monkeypatch.setenv("JWT_SECRET_KEY", "y" * 32)
         
-        response = client.get("/auth/me")
+        response = client.get("/users/me")
         
         # HTTPBearer returns 403 Forbidden when no Authorization header is provided
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -234,7 +234,7 @@ class TestAuthAPI:
         monkeypatch.setenv("JWT_SECRET_KEY", "y" * 32)
         
         headers = {"Authorization": "Bearer invalid.token.here"}
-        response = client.get("/auth/me", headers=headers)
+        response = client.get("/users/me", headers=headers)
         
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert "Could not validate credentials" in response.json()["detail"]
@@ -260,10 +260,165 @@ class TestAuthAPI:
         )
         
         headers = {"Authorization": f"Bearer {expired_token}"}
-        response = client.get("/auth/me", headers=headers)
+        response = client.get("/users/me", headers=headers)
         
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert "Could not validate credentials" in response.json()["detail"]
+    
+    def test_update_current_user_profile_username_success(self, client, db_session, monkeypatch):
+        """Test successful current user profile update with new username."""
+        # Set required environment variables
+        monkeypatch.setenv("SECRET_KEY", "x" * 32)
+        monkeypatch.setenv("JWT_SECRET_KEY", "y" * 32)
+        
+        # Create user
+        user_data = UserCreate(
+            username="originaluser",
+            email="original@example.com",
+            password="password123"
+        )
+        created_user = create_user(db_session, user_data)
+        
+        # Login to get token
+        login_data = {
+            "username_or_email": "originaluser",
+            "password": "password123"
+        }
+        login_response = client.post("/users/login", json=login_data)
+        token = login_response.json()["access_token"]
+        
+        # Update current user profile
+        update_data = {"username": "newusername"}
+        headers = {"Authorization": f"Bearer {token}"}
+        response = client.put("/users/me", json=update_data, headers=headers)
+        
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["id"] == str(created_user.id)
+        assert data["username"] == "newusername"
+        assert data["email"] == "original@example.com"  # email unchanged
+    
+    def test_update_current_user_profile_email_success(self, client, db_session, monkeypatch):
+        """Test successful current user profile update with new email."""
+        # Set required environment variables
+        monkeypatch.setenv("SECRET_KEY", "x" * 32)
+        monkeypatch.setenv("JWT_SECRET_KEY", "y" * 32)
+        
+        # Create user
+        user_data = UserCreate(
+            username="emailuser",
+            email="original@example.com",
+            password="password123"
+        )
+        created_user = create_user(db_session, user_data)
+        
+        # Login to get token
+        login_data = {
+            "username_or_email": "emailuser",
+            "password": "password123"
+        }
+        login_response = client.post("/users/login", json=login_data)
+        token = login_response.json()["access_token"]
+        
+        # Update current user profile
+        update_data = {"email": "newemail@example.com"}
+        headers = {"Authorization": f"Bearer {token}"}
+        response = client.put("/users/me", json=update_data, headers=headers)
+        
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["id"] == str(created_user.id)
+        assert data["username"] == "emailuser"  # username unchanged
+        assert data["email"] == "newemail@example.com"
+    
+    def test_update_current_user_profile_duplicate_username_conflict(self, client, db_session, monkeypatch):
+        """Test current user profile update failure with existing username."""
+        # Set required environment variables
+        monkeypatch.setenv("SECRET_KEY", "x" * 32)
+        monkeypatch.setenv("JWT_SECRET_KEY", "y" * 32)
+        
+        # Create first user with target username
+        existing_user_data = UserCreate(
+            username="targetusername",
+            email="existing@example.com",
+            password="password123"
+        )
+        create_user(db_session, existing_user_data)
+        
+        # Create second user to update
+        user_data = UserCreate(
+            username="updateuser",
+            email="update@example.com",
+            password="password123"
+        )
+        create_user(db_session, user_data)
+        
+        # Login as second user
+        login_data = {
+            "username_or_email": "updateuser",
+            "password": "password123"
+        }
+        login_response = client.post("/users/login", json=login_data)
+        token = login_response.json()["access_token"]
+        
+        # Try to update username to existing username
+        update_data = {"username": "targetusername"}
+        headers = {"Authorization": f"Bearer {token}"}
+        response = client.put("/users/me", json=update_data, headers=headers)
+        
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "Username already exists" in response.json()["detail"]
+    
+    def test_update_current_user_profile_duplicate_email_conflict(self, client, db_session, monkeypatch):
+        """Test current user profile update failure with existing email."""
+        # Set required environment variables
+        monkeypatch.setenv("SECRET_KEY", "x" * 32)
+        monkeypatch.setenv("JWT_SECRET_KEY", "y" * 32)
+        
+        # Create first user with target email
+        existing_user_data = UserCreate(
+            username="existinguser",
+            email="target@example.com",
+            password="password123"
+        )
+        create_user(db_session, existing_user_data)
+        
+        # Create second user to update
+        user_data = UserCreate(
+            username="updateuser",
+            email="update@example.com",
+            password="password123"
+        )
+        create_user(db_session, user_data)
+        
+        # Login as second user
+        login_data = {
+            "username_or_email": "updateuser",
+            "password": "password123"
+        }
+        login_response = client.post("/users/login", json=login_data)
+        token = login_response.json()["access_token"]
+        
+        # Try to update email to existing email
+        update_data = {"email": "target@example.com"}
+        headers = {"Authorization": f"Bearer {token}"}
+        response = client.put("/users/me", json=update_data, headers=headers)
+        
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert "Email already exists" in response.json()["detail"]
+    
+    def test_update_current_user_profile_no_token_forbidden(self, client, monkeypatch):
+        """Test current user profile update failure without authentication token."""
+        # Set required environment variables
+        monkeypatch.setenv("SECRET_KEY", "x" * 32)
+        monkeypatch.setenv("JWT_SECRET_KEY", "y" * 32)
+        
+        # Try to update profile without token
+        update_data = {"username": "newname"}
+        response = client.put("/users/me", json=update_data)
+        
+        # HTTPBearer returns 403 Forbidden when no Authorization header is provided
+        assert response.status_code == status.HTTP_403_FORBIDDEN
     
     def test_request_password_reset_existing_email(self, client, db_session, monkeypatch):
         """Test password reset request for existing email."""
@@ -281,7 +436,7 @@ class TestAuthAPI:
         
         # Request password reset
         reset_data = {"email": "reset@example.com"}
-        response = client.post("/auth/request-password-reset", json=reset_data)
+        response = client.post("/users/request-password-reset", json=reset_data)
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -301,7 +456,7 @@ class TestAuthAPI:
         
         # Request password reset for non-existent email
         reset_data = {"email": "nonexistent@example.com"}
-        response = client.post("/auth/request-password-reset", json=reset_data)
+        response = client.post("/users/request-password-reset", json=reset_data)
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -330,7 +485,7 @@ class TestAuthAPI:
             "token": reset_token,
             "new_password": "new_password_123"
         }
-        response = client.post("/auth/reset-password", json=reset_data)
+        response = client.post("/users/reset-password", json=reset_data)
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -346,7 +501,7 @@ class TestAuthAPI:
             "username_or_email": "pwresetuser",
             "password": "new_password_123"
         }
-        login_response = client.post("/auth/login", json=login_data)
+        login_response = client.post("/users/login", json=login_data)
         assert login_response.status_code == status.HTTP_200_OK
     
     def test_reset_password_invalid_token(self, client, monkeypatch):
@@ -359,7 +514,7 @@ class TestAuthAPI:
             "token": "invalid_token_12345",
             "new_password": "new_password"
         }
-        response = client.post("/auth/reset-password", json=reset_data)
+        response = client.post("/users/reset-password", json=reset_data)
         
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "Invalid or expired password reset token" in response.json()["detail"]
@@ -389,7 +544,7 @@ class TestAuthAPI:
             "token": expired_token,
             "new_password": "new_password"
         }
-        response = client.post("/auth/reset-password", json=reset_data)
+        response = client.post("/users/reset-password", json=reset_data)
         
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "Invalid or expired password reset token" in response.json()["detail"]

@@ -8,7 +8,7 @@ The following endpoints handle user authentication, registration, and password m
 
 ### Register User
 
-**Endpoint:** `POST /auth/register`
+**Endpoint:** `POST /users/register`
 
 **Description:** Registers a new user with a unique username and email.
 
@@ -42,7 +42,7 @@ The following endpoints handle user authentication, registration, and password m
 
 ### Login
 
-**Endpoint:** `POST /auth/login`
+**Endpoint:** `POST /users/login`
 
 **Description:** Authenticates a user and returns a JWT access token.
 
@@ -73,7 +73,7 @@ The following endpoints handle user authentication, registration, and password m
 
 ### Get Current User
 
-**Endpoint:** `GET /auth/me`
+**Endpoint:** `GET /users/me`
 
 **Description:** Retrieves the details of the currently authenticated user.
 
@@ -100,9 +100,49 @@ Authorization: Bearer <access_token>
 
 ---
 
+### Update Current User
+
+**Endpoint:** `PUT /users/me`
+
+**Description:** Updates the profile information for the currently authenticated user.
+
+**Request Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Request Body:** `UserUpdate` schema
+```json
+{
+  "username": "string (optional)",
+  "email": "string (optional)"
+}
+```
+
+**Response:** `UserResponse` schema
+```json
+{
+  "id": "uuid",
+  "username": "string",
+  "email": "string"
+}
+```
+
+**Authentication:** Required (Bearer Token)
+
+**Status Codes:**
+- `200 OK`: User profile updated successfully
+- `401 Unauthorized`: Invalid or expired token
+- `403 Forbidden`: No authorization header provided
+- `409 Conflict`: Username or email already exists
+- `422 Unprocessable Entity`: Invalid request data
+- `500 Internal Server Error`: Server error
+
+---
+
 ### Request Password Reset
 
-**Endpoint:** `POST /auth/request-password-reset`
+**Endpoint:** `POST /users/request-password-reset`
 
 **Description:** Initiates the password reset process by sending a reset link (token) to the user's email.
 
@@ -129,7 +169,7 @@ Authorization: Bearer <access_token>
 
 ### Reset Password
 
-**Endpoint:** `POST /auth/reset-password`
+**Endpoint:** `POST /users/reset-password`
 
 **Description:** Resets the user's password using a valid reset token.
 
@@ -167,6 +207,10 @@ Authorization: Bearer <access_token>
 ### UserLogin
 - `username_or_email`: string - Username or email address for login
 - `password`: string - User's password
+
+### UserUpdate
+- `username`: string (optional) - New username for the user
+- `email`: string (optional) - New email address for the user
 
 ### UserResponse
 - `id`: UUID - Unique identifier for the user
