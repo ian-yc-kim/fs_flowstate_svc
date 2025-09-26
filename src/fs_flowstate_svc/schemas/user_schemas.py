@@ -1,6 +1,7 @@
 """Pydantic schemas for user-related operations."""
 
 import uuid
+from typing import Optional
 from pydantic import BaseModel, EmailStr
 
 
@@ -19,6 +20,12 @@ class UserLogin(BaseModel):
     """Schema for user login."""
     username_or_email: str
     password: str
+
+
+class UserUpdate(BaseModel):
+    """Schema for user profile updates. Password updates are handled via reset_password endpoint."""
+    username: Optional[str] = None
+    email: Optional[str] = None
 
 
 class Token(BaseModel):

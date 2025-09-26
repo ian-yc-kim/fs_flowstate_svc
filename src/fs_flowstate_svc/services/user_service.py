@@ -79,6 +79,69 @@ def create_user(db: Session, user: user_schemas.UserCreate) -> Users:
         raise
 
 
+def update_user(db: Session, user_id: uuid.UUID, user_update: user_schemas.UserUpdate) -> Users:
+    """Update user profile information.
+    
+    Args:
+        db: Database session
+        user_id: UUID of the user to update
+        user_update: User update data
+        
+    Returns:
+        Updated user object
+        
+    Raises:
+        HTTPException: If user not found
+        ValueError: If username or email already exists
+    """
+    try:
+        # Fetch user by ID
+        stmt = select(Users).where(Users.id == user_id)
+        result = db.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        changed = False
+        
+        # Update username if provided and different
+        if user_update.username is not None and user_update.username != user.username:
+            user.username = user_update.username
+            try:
+                db.commit()
+                changed = True
+            except IntegrityError as e:
+                db.rollback()
+                logger.error(f"Integrity error updating username: {e}", exc_info=True)
+                raise ValueError("Username already exists")
+        
+        # Update email if provided and different
+        if user_update.email is not None and user_update.email != user.email:
+            user.email = user_update.email
+            try:
+                db.commit()
+                changed = True
+            except IntegrityError as e:
+                db.rollback()
+                logger.error(f"Integrity error updating email: {e}", exc_info=True)
+                raise ValueError("Email already exists")
+        
+        # Refresh user object to reflect any onupdate changes
+        if changed:
+            db.refresh(user)
+        
+        return user
+        
+    except HTTPException:
+        raise
+    except ValueError:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating user: {e}", exc_info=True)
+        raise
+
+
 def authenticate_user(db: Session, identifier: str, password: str) -> Optional[Users]:
     """Authenticate user by username/email and password.
     
