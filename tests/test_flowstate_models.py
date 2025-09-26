@@ -227,8 +227,8 @@ class TestReminderSettingsModel:
         assert reminder.reminder_type == "email"
         assert reminder.is_active == True
     
-    def test_reminder_cascade_delete_on_event_delete(self, db_session):
-        """Test that reminder_settings are deleted when event is deleted (cascade behavior)."""
+    def test_reminder_set_null_on_event_delete(self, db_session):
+        """Test that reminder event_id is set to NULL when event is deleted (SET NULL behavior)."""
         user = Users(username="testuser", email="test@example.com", password_hash="hash")
         db_session.add(user)
         db_session.commit()
@@ -256,10 +256,11 @@ class TestReminderSettingsModel:
         db_session.delete(event)
         db_session.commit()
         
-        # Reminder should be deleted due to cascade="all, delete-orphan" 
-        # as specified in the action item for Events.reminder_settings relationship
-        deleted_reminder = db_session.get(ReminderSettings, reminder_id)
-        assert deleted_reminder is None
+        # Reminder should still exist but with event_id set to None 
+        # (ondelete='SET NULL' behavior)
+        updated_reminder = db_session.get(ReminderSettings, reminder_id)
+        assert updated_reminder is not None
+        assert updated_reminder.event_id is None
     
     def test_reminder_relationships(self, db_session):
         """Test ReminderSettings relationships with User and Event."""

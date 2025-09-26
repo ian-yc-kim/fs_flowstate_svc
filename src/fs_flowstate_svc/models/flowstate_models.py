@@ -58,7 +58,7 @@ class Events(Base):
     
     # Relationships
     user = relationship("Users", back_populates="events")
-    reminder_settings = relationship("ReminderSettings", back_populates="event", cascade="all, delete-orphan")
+    reminder_settings = relationship("ReminderSettings", back_populates="event", cascade="save-update, merge")
     
     def __repr__(self) -> str:
         return f"<Events(id={self.id}, title='{self.title}', user_id={self.user_id})>"
