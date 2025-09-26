@@ -440,6 +440,79 @@ Authorization: Bearer <access_token>
 
 ---
 
+## Inbox Management Endpoints
+
+The following endpoints handle inbox item management including conversion to calendar events.
+
+**Authentication:** All inbox management endpoints require JWT authentication (Authorization: Bearer <token>).
+
+### Convert Inbox Item to Event
+
+**Endpoint:** `POST /api/inbox/convert_to_event`
+
+**Description:** Converts an existing inbox item into a new calendar event.
+
+**Authentication:** Requires valid JWT bearer token.
+
+**Request Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Request Body:** `InboxItemConvertToEvent` schema
+```json
+{
+  "item_id": "b1c0b3a7-3e81-4f9e-9d2a-8c5a4d7e6f1a",
+  "start_time": "2023-10-27T09:00:00Z",
+  "end_time": "2023-10-27T10:00:00Z",
+  "event_title": "Follow up on client proposal",
+  "is_all_day": false,
+  "event_category": "Work",
+  "event_metadata": {"origin": "inbox", "priority": "high"}
+}
+```
+
+**Response:** `EventResponse` schema
+```json
+{
+  "id": "e2f3e4d5-5c7e-4b8f-9a0d-1e2f3a4b5c6d",
+  "user_id": "u9d8c7b6-5a4f-3e2d-1c0b-9a8b7c6d5e4f",
+  "title": "Follow up on client proposal",
+  "description": "(derived from inbox item content)",
+  "start_time": "2023-10-27T09:00:00Z",
+  "end_time": "2023-10-27T10:00:00Z",
+  "category": "Work",
+  "is_all_day": false,
+  "is_recurring": false,
+  "event_metadata": {"converted_from_inbox_item_id": "b1c0b3a7-3e81-4f9e-9d2a-8c5a4d7e6f1a", "origin": "inbox", "priority": "high"},
+  "created_at": "2023-10-27T08:50:00Z",
+  "updated_at": "2023-10-27T08:50:00Z"
+}
+```
+
+**Authentication:** Required (Bearer Token)
+
+**Status Codes:**
+- `201 Created`: Event created successfully from inbox item
+- `400 Bad Request`: If event times are invalid or other input validation fails
+- `401 Unauthorized`: If no/invalid JWT token is provided
+- `403 Forbidden`: If the token is valid but the user lacks permissions (handled by `get_current_user_dep`)
+- `404 Not Found`: If the `item_id` does not exist or is not owned by the authenticated user
+- `409 Conflict`: If the new event conflicts with an existing event in the calendar
+- `500 Internal Server Error`: For unexpected server issues
+
+### Streamlit Drag-and-Drop Integration Notes
+
+**Client-Side Responsibilities:**
+- When an inbox item is dragged and dropped onto a calendar, the Streamlit frontend is responsible for extracting the `item_id` of the dragged inbox item.
+- The frontend must determine the `start_time` and `end_time` for the new event based on where the item is dropped on the calendar UI. It should also infer `is_all_day` status.
+- These details, along with any optional overrides for `event_title`, `event_description`, `event_category`, `is_recurring`, or `event_metadata`, should be packaged into an `InboxItemConvertToEvent` request body.
+- This payload should then be sent to the `POST /api/inbox/convert_to_event` endpoint.
+
+**Post-Conversion:** Upon successful conversion, the client can consider the inbox item's status as updated (e.g., to 'SCHEDULED') and update its local UI accordingly.
+
+---
+
 ## Schema Definitions
 
 ### UserCreate
@@ -509,3 +582,14 @@ Authorization: Bearer <access_token>
 - `start_date`: date (optional) - Filter events starting from this date
 - `end_date`: date (optional) - Filter events ending before this date
 - `category`: string (optional) - Filter events by category
+
+### InboxItemConvertToEvent
+- `item_id`: UUID - The ID of the inbox item to convert (required)
+- `start_time`: datetime - Start time of the new calendar event in ISO 8601 format (required)
+- `end_time`: datetime - End time of the new calendar event in ISO 8601 format (required)
+- `event_title`: string (optional) - Optional title for the event. Defaults to inbox item content if not provided
+- `event_description`: string (optional) - Optional description for the event. Defaults to inbox item content if not provided and content is short, or empty
+- `is_all_day`: boolean - Whether the event is an all-day event (default: false)
+- `is_recurring`: boolean - Whether the event is a recurring event (default: false)
+- `event_category`: string (optional) - Optional category for the event. Defaults to inbox item category if not provided
+- `event_metadata`: object (optional) - Optional metadata for the event. The original inbox item ID will be included here automatically
