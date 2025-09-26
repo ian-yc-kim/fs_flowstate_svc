@@ -2,7 +2,7 @@ import uuid
 from typing import Optional
 from datetime import datetime
 
-from sqlalchemy import Column, String, Text, DateTime, Boolean, Integer, ForeignKey, func, TypeDecorator
+from sqlalchemy import Column, String, Text, DateTime, Boolean, Integer, ForeignKey, func, TypeDecorator, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.types import JSON
@@ -39,6 +39,7 @@ class Users(Base):
     inbox_items = relationship("InboxItems", back_populates="user", cascade="all, delete-orphan")
     reminder_settings = relationship("ReminderSettings", back_populates="user", cascade="all, delete-orphan")
     ai_settings = relationship("AISettings", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    user_reminder_preferences = relationship("UserReminderPreference", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self) -> str:
         return f"<Users(id={self.id}, username='{self.username}', email='{self.email}')>"
@@ -128,3 +129,26 @@ class AISettings(Base):
     
     def __repr__(self) -> str:
         return f"<AISettings(id={self.id}, user_id={self.user_id})>"
+
+
+class UserReminderPreference(Base):
+    __tablename__ = 'user_reminder_preferences'
+    
+    id: UUID = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: UUID = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    event_category: str = Column(String, nullable=False)
+    preparation_time_minutes: int = Column(Integer, nullable=False)
+    is_custom: bool = Column(Boolean, nullable=False, default=False)
+    created_at: DateTime = Column(DateTime, default=func.now(), nullable=False)
+    updated_at: DateTime = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint('user_id', 'event_category', name='uq_user_event_category'),
+    )
+    
+    # Relationships
+    user = relationship("Users", back_populates="user_reminder_preferences")
+    
+    def __repr__(self) -> str:
+        return f"<UserReminderPreference(id={self.id}, user_id={self.user_id}, event_category='{self.event_category}', preparation_time_minutes={self.preparation_time_minutes})>"
