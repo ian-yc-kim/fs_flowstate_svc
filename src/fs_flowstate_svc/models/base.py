@@ -1,7 +1,8 @@
-from sqlalchemy import Column, PrimaryKeyConstraint, String
-from sqlalchemy import create_engine
+from typing import Generator
+
+from sqlalchemy import Column, PrimaryKeyConstraint, String, create_engine
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import scoped_session, sessionmaker, Session
+from sqlalchemy.orm import Session, scoped_session, sessionmaker
 
 from fs_flowstate_svc.config import DATABASE_URL
 
@@ -11,8 +12,8 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
 
 
-def get_db() -> Session:
-    session = scoped_session(sessionmaker(bind=engine))
+def get_db() -> Generator[Session, None, None]:
+    session = SessionLocal()
     try:
         yield session
     finally:

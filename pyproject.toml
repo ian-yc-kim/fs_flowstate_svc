@@ -17,6 +17,10 @@ uvicorn = "^0.32.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"
+black = "^25.9.0"
+isort = "^6.0.1"
+mypy = "^1.18.2"
+httpx = "^0.28.1"
 
 [tool.poetry.scripts]
 fs_flowstate_svc = "fs_flowstate_svc.main:main"
