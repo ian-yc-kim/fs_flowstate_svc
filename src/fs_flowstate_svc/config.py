@@ -1,4 +1,4 @@
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     SERVICE_PORT: int = 8000
     OPENAI_API_KEY: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
     SECRET_KEY: str = Field(..., validation_alias="SECRET_KEY", min_length=32)
+    JWT_SECRET_KEY: SecretStr = Field(default="jwt_development_secret_key_32_chars", validation_alias="JWT_SECRET_KEY", min_length=32)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
 
 # Module-level settings instance
