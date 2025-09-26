@@ -1,7 +1,21 @@
-import os
-from dotenv import load_dotenv
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///:memory:")
-SERVICE_PORT = os.getenv("SERVICE_PORT", 8000)
+class Settings(BaseSettings):
+    """Application settings using Pydantic BaseSettings for robust configuration management."""
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"  # Allow extra fields in environment without validation errors
+    )
+    
+    DATABASE_URL: str = "sqlite:///:memory:"
+    SERVICE_PORT: int = 8000
+    OPENAI_API_KEY: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    SECRET_KEY: str = Field(..., validation_alias="SECRET_KEY", min_length=32)
+
+
+# Module-level settings instance
+settings = Settings()
