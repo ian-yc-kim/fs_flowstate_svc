@@ -1,5 +1,6 @@
 import uuid
 from typing import Optional
+from datetime import datetime
 
 from sqlalchemy import Column, String, Text, DateTime, Boolean, Integer, ForeignKey, func, TypeDecorator
 from sqlalchemy.orm import relationship
@@ -82,8 +83,8 @@ class InboxItems(Base):
     category: Optional[str] = Column(String, nullable=True)
     priority: int = Column(Integer, nullable=False)
     status: str = Column(String, nullable=False)
-    created_at: DateTime = Column(DateTime, default=func.now(), nullable=False)
-    updated_at: DateTime = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    created_at: DateTime = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: DateTime = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
     user = relationship("Users", back_populates="inbox_items")
