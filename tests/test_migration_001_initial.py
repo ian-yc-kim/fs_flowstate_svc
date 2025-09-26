@@ -108,11 +108,13 @@ class TestInitialMigration:
         """Test that reminder_settings table has correct columns and constraints."""
         inspector = inspect(clean_db_session.bind)
         
-        # Check columns
+        # Check columns - including new fields added by migration 79d626584b65
         columns = {col['name']: col for col in inspector.get_columns('reminder_settings')}
         expected_columns = {
             'id', 'user_id', 'event_id', 'reminder_time', 'lead_time_minutes', 
-            'reminder_type', 'is_active', 'created_at', 'updated_at'
+            'reminder_type', 'is_active', 'status', 'notification_method',
+            'delivery_attempted_at', 'delivery_succeeded_at', 'failure_reason',
+            'reminder_metadata', 'created_at', 'updated_at'
         }
         assert set(columns.keys()) == expected_columns
         
