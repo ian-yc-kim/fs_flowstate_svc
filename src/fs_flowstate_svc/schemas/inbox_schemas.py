@@ -41,7 +41,7 @@ class InboxItemBase(BaseModel):
 
 class InboxItemCreate(BaseModel):
     """Schema for inbox item creation."""
-    content: str = Field(min_length=1)
+    content: str
     category: InboxCategory = InboxCategory.TODO
     priority: InboxPriority = InboxPriority.P3
     status: InboxStatus = InboxStatus.PENDING
@@ -49,7 +49,7 @@ class InboxItemCreate(BaseModel):
 
 class InboxItemUpdate(BaseModel):
     """Schema for inbox item updates with all fields optional."""
-    content: Optional[str] = Field(None, min_length=1)
+    content: Optional[str] = None
     category: Optional[InboxCategory] = None
     priority: Optional[InboxPriority] = None
     status: Optional[InboxStatus] = None

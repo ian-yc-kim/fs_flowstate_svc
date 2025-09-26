@@ -109,19 +109,14 @@ class TestInboxItemCreate:
         assert item.priority == InboxPriority.P1
         assert item.status == InboxStatus.SCHEDULED
     
-    def test_inbox_item_create_content_validation(self):
-        """Test content field validation (min_length=1)."""
-        # Valid content
-        item = InboxItemCreate(content="a")
-        assert item.content == "a"
+    def test_inbox_item_create_empty_content_allowed(self):
+        """Test that empty content is allowed at schema level (validation happens at service level)."""
+        item = InboxItemCreate(content="")
+        assert item.content == ""
         
-        # Invalid empty content should raise ValidationError
-        with pytest.raises(ValidationError) as exc_info:
-            InboxItemCreate(content="")
-        
-        error = exc_info.value.errors()[0]
-        assert error["type"] == "string_too_short"
-        assert "content" in error["loc"]
+        # Whitespace content should also be allowed
+        item_whitespace = InboxItemCreate(content="   ")
+        assert item_whitespace.content == "   "
 
 
 class TestInboxItemUpdate:
@@ -148,23 +143,15 @@ class TestInboxItemUpdate:
         assert item.priority == InboxPriority.P5
         assert item.status is None
     
-    def test_inbox_item_update_content_validation(self):
-        """Test content validation when provided."""
-        # Valid content
-        item = InboxItemUpdate(content="Updated")
-        assert item.content == "Updated"
+    def test_inbox_item_update_content_allowed_empty(self):
+        """Test that empty content is allowed at schema level (validation happens at service level)."""
+        # Empty content is allowed at schema level
+        item = InboxItemUpdate(content="")
+        assert item.content == ""
         
         # None content is allowed
-        item = InboxItemUpdate(content=None)
-        assert item.content is None
-        
-        # Empty string should raise ValidationError
-        with pytest.raises(ValidationError) as exc_info:
-            InboxItemUpdate(content="")
-        
-        error = exc_info.value.errors()[0]
-        assert error["type"] == "string_too_short"
-        assert "content" in error["loc"]
+        item_none = InboxItemUpdate(content=None)
+        assert item_none.content is None
 
 
 class TestInboxItemResponse:
