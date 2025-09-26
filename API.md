@@ -197,6 +197,249 @@ Authorization: Bearer <access_token>
 
 ---
 
+## Event Management
+
+The following endpoints handle event management including creation, retrieval, updating, and deletion of calendar events.
+
+**Authentication:** All event management endpoints require JWT authentication (Authorization: Bearer <token>).
+
+**Timezone Handling:** All datetime fields accept ISO 8601 strings with optional timezone information. Naive datetime values are treated as UTC. All-day events are automatically normalized to full-day spans (00:00:00 to 23:59:59.999999).
+
+### Create Event
+
+**Endpoint:** `POST /api/events/`
+
+**Description:** Creates a new calendar event for the authenticated user.
+
+**Request Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Request Body:** `EventCreate` schema
+```json
+{
+  "title": "string",
+  "description": "string (optional)",
+  "start_time": "2024-01-15T10:00:00Z",
+  "end_time": "2024-01-15T11:00:00Z",
+  "category": "string (optional)",
+  "is_all_day": false,
+  "is_recurring": false,
+  "metadata": {"key": "value"}
+}
+```
+
+**Response:** `EventResponse` schema
+```json
+{
+  "id": "uuid",
+  "user_id": "uuid",
+  "title": "Team Meeting",
+  "description": "Weekly team sync",
+  "start_time": "2024-01-15T10:00:00Z",
+  "end_time": "2024-01-15T11:00:00Z",
+  "category": "work",
+  "is_all_day": false,
+  "is_recurring": false,
+  "metadata": {"priority": "high"},
+  "created_at": "2024-01-15T09:00:00Z",
+  "updated_at": "2024-01-15T09:00:00Z"
+}
+```
+
+**Authentication:** Required (Bearer Token)
+
+**Status Codes:**
+- `201 Created`: Event created successfully
+- `400 Bad Request`: Invalid request data (e.g., end time before start time, empty title)
+- `401 Unauthorized`: Invalid or expired token
+- `403 Forbidden`: No authorization header provided
+- `409 Conflict`: Event time conflicts with existing events
+- `500 Internal Server Error`: Server error
+
+---
+
+### Get Event
+
+**Endpoint:** `GET /api/events/{event_id}`
+
+**Description:** Retrieves a single event by its ID. Users can only access their own events.
+
+**Request Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Path Parameters:**
+- `event_id` (UUID): The unique identifier of the event to retrieve
+
+**Response:** `EventResponse` schema
+```json
+{
+  "id": "uuid",
+  "user_id": "uuid",
+  "title": "string",
+  "description": "string",
+  "start_time": "2024-01-15T10:00:00Z",
+  "end_time": "2024-01-15T11:00:00Z",
+  "category": "string",
+  "is_all_day": false,
+  "is_recurring": false,
+  "metadata": {"key": "value"},
+  "created_at": "2024-01-15T09:00:00Z",
+  "updated_at": "2024-01-15T09:00:00Z"
+}
+```
+
+**Authentication:** Required (Bearer Token)
+
+**Status Codes:**
+- `200 OK`: Event retrieved successfully
+- `401 Unauthorized`: Invalid or expired token
+- `403 Forbidden`: No authorization header provided or event belongs to another user
+- `404 Not Found`: Event not found
+- `500 Internal Server Error`: Server error
+
+---
+
+### Get Events with Filtering
+
+**Endpoint:** `GET /api/events/`
+
+**Description:** Retrieves events for the authenticated user with optional filtering by date range and category.
+
+**Request Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Query Parameters:**
+- `start_date` (date, optional): Filter events starting from this date (format: YYYY-MM-DD)
+- `end_date` (date, optional): Filter events ending before this date (format: YYYY-MM-DD)
+- `category` (string, optional): Filter events by category
+
+**Example Request:**
+```
+GET /api/events/?start_date=2024-01-15&end_date=2024-01-31&category=work
+```
+
+**Response:** List of `EventResponse` schemas
+```json
+[
+  {
+    "id": "uuid",
+    "user_id": "uuid",
+    "title": "Team Meeting",
+    "description": "Weekly team sync",
+    "start_time": "2024-01-15T10:00:00Z",
+    "end_time": "2024-01-15T11:00:00Z",
+    "category": "work",
+    "is_all_day": false,
+    "is_recurring": false,
+    "metadata": {"priority": "high"},
+    "created_at": "2024-01-15T09:00:00Z",
+    "updated_at": "2024-01-15T09:00:00Z"
+  }
+]
+```
+
+**Authentication:** Required (Bearer Token)
+
+**Status Codes:**
+- `200 OK`: Events retrieved successfully
+- `401 Unauthorized`: Invalid or expired token
+- `403 Forbidden`: No authorization header provided
+- `500 Internal Server Error`: Server error
+
+---
+
+### Update Event
+
+**Endpoint:** `PUT /api/events/{event_id}`
+
+**Description:** Updates an existing event. Users can only update their own events.
+
+**Request Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Path Parameters:**
+- `event_id` (UUID): The unique identifier of the event to update
+
+**Request Body:** `EventUpdate` schema (all fields optional)
+```json
+{
+  "title": "string (optional)",
+  "description": "string (optional)",
+  "start_time": "2024-01-15T14:00:00Z (optional)",
+  "end_time": "2024-01-15T15:00:00Z (optional)",
+  "category": "string (optional)",
+  "is_all_day": false,
+  "is_recurring": false,
+  "metadata": {"key": "value"}
+}
+```
+
+**Response:** `EventResponse` schema
+```json
+{
+  "id": "uuid",
+  "user_id": "uuid",
+  "title": "Updated Event Title",
+  "description": "Updated description",
+  "start_time": "2024-01-15T14:00:00Z",
+  "end_time": "2024-01-15T15:00:00Z",
+  "category": "work",
+  "is_all_day": false,
+  "is_recurring": false,
+  "metadata": {"priority": "medium"},
+  "created_at": "2024-01-15T09:00:00Z",
+  "updated_at": "2024-01-15T13:30:00Z"
+}
+```
+
+**Authentication:** Required (Bearer Token)
+
+**Status Codes:**
+- `200 OK`: Event updated successfully
+- `400 Bad Request`: Invalid request data (e.g., end time before start time, empty title)
+- `401 Unauthorized`: Invalid or expired token
+- `403 Forbidden`: No authorization header provided or event belongs to another user
+- `404 Not Found`: Event not found
+- `409 Conflict`: Event time conflicts with existing events
+- `500 Internal Server Error`: Server error
+
+---
+
+### Delete Event
+
+**Endpoint:** `DELETE /api/events/{event_id}`
+
+**Description:** Deletes an event and handles cleanup of associated reminder settings. Users can only delete their own events.
+
+**Request Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Path Parameters:**
+- `event_id` (UUID): The unique identifier of the event to delete
+
+**Response:** No content (204 status code)
+
+**Authentication:** Required (Bearer Token)
+
+**Status Codes:**
+- `204 No Content`: Event deleted successfully
+- `401 Unauthorized`: Invalid or expired token
+- `403 Forbidden`: No authorization header provided or event belongs to another user
+- `404 Not Found`: Event not found
+- `500 Internal Server Error`: Server error
+
+---
+
 ## Schema Definitions
 
 ### UserCreate
@@ -227,3 +470,42 @@ Authorization: Bearer <access_token>
 ### PasswordResetConfirm
 - `token`: string - Password reset token received via email
 - `new_password`: string - New password to set for the user
+
+### EventCreate
+- `title`: string - Event title (required)
+- `description`: string (optional) - Event description
+- `start_time`: datetime - Event start time in ISO 8601 format
+- `end_time`: datetime - Event end time in ISO 8601 format
+- `category`: string (optional) - Event category
+- `is_all_day`: boolean - Whether the event is an all-day event (default: false)
+- `is_recurring`: boolean - Whether the event is recurring (default: false)
+- `metadata`: object (optional) - Additional event metadata as key-value pairs
+
+### EventUpdate
+- `title`: string (optional) - New event title
+- `description`: string (optional) - New event description
+- `start_time`: datetime (optional) - New event start time in ISO 8601 format
+- `end_time`: datetime (optional) - New event end time in ISO 8601 format
+- `category`: string (optional) - New event category
+- `is_all_day`: boolean (optional) - Whether the event is an all-day event
+- `is_recurring`: boolean (optional) - Whether the event is recurring
+- `metadata`: object (optional) - New event metadata as key-value pairs
+
+### EventResponse
+- `id`: UUID - Unique identifier for the event
+- `user_id`: UUID - ID of the user who owns the event
+- `title`: string - Event title
+- `description`: string - Event description
+- `start_time`: datetime - Event start time in ISO 8601 format
+- `end_time`: datetime - Event end time in ISO 8601 format
+- `category`: string - Event category
+- `is_all_day`: boolean - Whether the event is an all-day event
+- `is_recurring`: boolean - Whether the event is recurring
+- `metadata`: object - Event metadata as key-value pairs
+- `created_at`: datetime - Event creation timestamp
+- `updated_at`: datetime - Event last update timestamp
+
+### EventFilter
+- `start_date`: date (optional) - Filter events starting from this date
+- `end_date`: date (optional) - Filter events ending before this date
+- `category`: string (optional) - Filter events by category
