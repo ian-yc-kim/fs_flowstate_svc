@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from fs_flowstate_svc.models.base import get_db
 from fs_flowstate_svc.models.flowstate_models import Users
-from fs_flowstate_svc.schemas import inbox_schemas
+from fs_flowstate_svc.schemas import inbox_schemas, event_schemas
 from fs_flowstate_svc.services import inbox_service, user_service
 
 logger = logging.getLogger(__name__)
@@ -269,6 +269,46 @@ def bulk_archive_items(
         raise
     except Exception as e:
         logger.error(f"Unexpected error during bulk archive: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+
+@inbox_router.post("/convert_to_event", response_model=event_schemas.EventResponse, status_code=status.HTTP_201_CREATED)
+def convert_inbox_item_to_event(
+    conversion_data: inbox_schemas.InboxItemConvertToEvent,
+    current_user: Users = Depends(get_current_user_dep),
+    db: Session = Depends(get_db)
+):
+    """Convert an existing inbox item into a calendar event.
+    
+    This endpoint allows users to convert inbox items into scheduled events.
+    The original inbox item will be marked as SCHEDULED upon successful conversion.
+    
+    Args:
+        conversion_data: Conversion request data including item ID and event details
+        current_user: Current authenticated user (injected dependency)
+        db: Database session
+        
+    Returns:
+        Created event response with 201 Created status
+        
+    Raises:
+        HTTPException: 
+            - 400 Bad Request: If validation fails (e.g., invalid times)
+            - 404 Not Found: If inbox item not found or not owned by user
+            - 409 Conflict: If event time conflicts with existing events
+            - 500 Internal Server Error: If database operation fails
+    """
+    try:
+        created_event = inbox_service.convert_inbox_item_to_event(db, current_user.id, conversion_data)
+        return event_schemas.EventResponse.model_validate(created_event)
+    except HTTPException:
+        # Re-raise HTTP exceptions from service layer (400, 404, 409)
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during inbox item to event conversion: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"

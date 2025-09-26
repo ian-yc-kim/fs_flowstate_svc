@@ -9,8 +9,9 @@ from fastapi import HTTPException, status
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import Session
 
-from fs_flowstate_svc.models.flowstate_models import InboxItems
-from fs_flowstate_svc.schemas import inbox_schemas
+from fs_flowstate_svc.models.flowstate_models import InboxItems, Events
+from fs_flowstate_svc.schemas import inbox_schemas, event_schemas
+from fs_flowstate_svc.services import event_service
 
 logger = logging.getLogger(__name__)
 
@@ -297,3 +298,103 @@ def bulk_archive_inbox_items(db: Session, user_id: uuid.UUID, item_ids: List[uui
         Number of items archived
     """
     return bulk_update_inbox_item_status(db, user_id, item_ids, inbox_schemas.InboxStatus.ARCHIVED)
+
+
+def convert_inbox_item_to_event(db: Session, user_id: uuid.UUID, conversion_data: inbox_schemas.InboxItemConvertToEvent) -> Events:
+    """Convert an existing inbox item into a calendar event.
+    
+    Args:
+        db: Database session
+        user_id: User ID for ownership verification
+        conversion_data: Conversion request data
+        
+    Returns:
+        Created event object
+        
+    Raises:
+        HTTPException: If validation fails, item not found, or event creation fails
+    """
+    try:
+        # Retrieve the inbox item with ownership check
+        inbox_item = get_inbox_item(db, user_id, conversion_data.item_id)
+        
+        if inbox_item is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Inbox item not found or not owned"
+            )
+        
+        # Prepare event title with truncation for safety
+        if conversion_data.event_title is not None:
+            event_title = conversion_data.event_title.strip()[:255]
+        else:
+            event_title = inbox_item.content.strip()[:255]
+        
+        # Prepare event description with length check
+        if conversion_data.event_description is not None:
+            event_description = conversion_data.event_description
+        else:
+            content_stripped = inbox_item.content.strip()
+            if len(content_stripped) <= 255:
+                event_description = content_stripped
+            else:
+                event_description = ""
+        
+        # Prepare event category
+        event_category = conversion_data.event_category or inbox_item.category
+        
+        # Prepare event metadata
+        event_metadata = dict(conversion_data.event_metadata or {})
+        event_metadata["converted_from_inbox_item_id"] = str(inbox_item.id)
+        
+        # Construct EventCreate object
+        event_create = event_schemas.EventCreate(
+            title=event_title,
+            description=event_description,
+            start_time=conversion_data.start_time,
+            end_time=conversion_data.end_time,
+            is_all_day=conversion_data.is_all_day,
+            is_recurring=conversion_data.is_recurring,
+            category=event_category,
+            metadata=event_metadata
+        )
+        
+        # Create the event using event service (this will commit its own transaction)
+        created_event = event_service.create_event(db, user_id, event_create)
+        
+        # Capture the event ID before the object becomes detached
+        created_event_id = created_event.id
+        
+        # Update the original inbox item status to SCHEDULED in a separate statement
+        # Using update statement with explicit commit to avoid session issues
+        update_stmt = update(InboxItems).where(
+            InboxItems.id == inbox_item.id,
+            InboxItems.user_id == user_id
+        ).values(
+            status=inbox_schemas.InboxStatus.SCHEDULED.value,
+            updated_at=func.now()
+        )
+        
+        db.execute(update_stmt)
+        db.commit()
+        
+        # Re-query the created event to return a fresh instance
+        event_stmt = select(Events).where(
+            Events.id == created_event_id,
+            Events.user_id == user_id
+        )
+        result = db.execute(event_stmt)
+        final_event = result.scalar_one()
+        
+        return final_event
+        
+    except HTTPException:
+        # Propagate HTTP exceptions from event service or validation
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error converting inbox item to event: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database operation failed"
+        )

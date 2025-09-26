@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from enum import Enum, IntEnum
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -82,3 +82,16 @@ class InboxItemsBulkUpdate(BaseModel):
 class InboxItemsBulkArchive(BaseModel):
     """Schema for bulk archiving inbox items."""
     item_ids: List[uuid.UUID]
+
+
+class InboxItemConvertToEvent(BaseModel):
+    """Schema for converting an inbox item to a calendar event."""
+    item_id: uuid.UUID = Field(..., description="The ID of the inbox item to convert.")
+    start_time: datetime = Field(..., description="Start time of the new calendar event (ISO 8601 format). Example: '2023-10-27T10:00:00Z'")
+    end_time: datetime = Field(..., description="End time of the new calendar event (ISO 8601 format). Example: '2023-10-27T11:00:00Z'")
+    event_title: Optional[str] = Field(None, description="Optional title for the event. Defaults to inbox item content if not provided.")
+    event_description: Optional[str] = Field(None, description="Optional description for the event. Defaults to inbox item content if not provided and content is short, or empty.")
+    is_all_day: bool = Field(False, description="Whether the event is an all-day event.")
+    is_recurring: bool = Field(False, description="Whether the event is a recurring event.")
+    event_category: Optional[str] = Field(None, description="Optional category for the event. Defaults to inbox item category if not provided.")
+    event_metadata: Optional[Dict[str, Any]] = Field(None, description="Optional metadata for the event. The original inbox item ID will be included here automatically. Example: {'priority': 'high'}")
