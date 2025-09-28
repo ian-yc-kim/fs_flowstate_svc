@@ -42,6 +42,13 @@ async def generic_exception_handler(request, exc: Exception):
         content={"detail": "Internal Server Error"}
     )
 
+# Explicitly register handlers on the app instance as well to ensure
+# they are used in all test/run contexts (avoids subtle middleware ordering
+# issues that can cause TestClient to re-raise server exceptions).
+app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(Exception, generic_exception_handler)
+
 # add routers
 app.include_router(auth_router)
 app.include_router(event_router, prefix="/api")
