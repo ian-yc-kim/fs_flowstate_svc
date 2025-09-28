@@ -6,6 +6,7 @@ from fs_flowstate_svc.services import user_service
 from fs_flowstate_svc.schemas.user_schemas import UserCreate
 from fs_flowstate_svc.api.websocket_router import connection_manager
 from fs_flowstate_svc.config import settings
+from fs_flowstate_svc.schemas.websocket_schemas import WebSocketMessage
 
 
 class TestWebSocketRouter:
@@ -105,3 +106,26 @@ class TestWebSocketRouter:
         # allow cleanup
         time.sleep(0.05)
         assert connection_manager.total() == before
+
+    def test_broadcast_to_user_fanout(self, client, db_session, monkeypatch):
+        monkeypatch.setenv("SECRET_KEY", "x" * 32)
+        monkeypatch.setenv("JWT_SECRET_KEY", "y" * 32)
+
+        user = user_service.create_user(db_session, UserCreate(username="fanout", email="fanout@example.com", password="pwd12345"))
+        token = jwt_handler.create_access_token({"sub": str(user.id)})
+
+        # open two websocket connections
+        with client.websocket_connect(f"/ws/sync?token={token}") as ws1:
+            with client.websocket_connect(f"/ws/sync?token={token}") as ws2:
+                # drain initial messages (likely pings)
+                for _ in range(2):
+                    m1 = ws1.receive_json()
+                    m2 = ws2.receive_json()
+                # send broadcast from server side
+                msg = WebSocketMessage(type="event_created", payload={"x": 1})
+                connection_manager.broadcast_to_user(str(user.id), msg)
+                # both should receive
+                r1 = ws1.receive_json()
+                r2 = ws2.receive_json()
+                assert r1["type"] == "event_created"
+                assert r2["type"] == "event_created"

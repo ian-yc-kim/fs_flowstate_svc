@@ -11,7 +11,8 @@ from fs_flowstate_svc.api.websocket_router import websocket_router
 # Set up logger for this module
 logger = logging.getLogger("fs_flowstate_svc.app")
 
-app = FastAPI(debug=True)
+# Create FastAPI app with debug disabled so exception handlers run in tests
+app = FastAPI(debug=False)
 
 # Exception handlers
 @app.exception_handler(HTTPException)

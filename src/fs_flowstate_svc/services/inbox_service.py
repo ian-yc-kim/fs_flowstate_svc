@@ -12,6 +12,9 @@ from sqlalchemy.orm import Session
 from fs_flowstate_svc.models.flowstate_models import InboxItems, Events
 from fs_flowstate_svc.schemas import inbox_schemas, event_schemas
 from fs_flowstate_svc.services import event_service
+from fs_flowstate_svc.schemas.inbox_schemas import InboxItemResponse
+from fs_flowstate_svc.schemas.websocket_schemas import WebSocketMessage
+from fs_flowstate_svc.api.websocket_router import connection_manager
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,14 @@ def create_inbox_item(db: Session, user_id: uuid.UUID, item_data: inbox_schemas.
         db.commit()
         db.refresh(db_item)
         
+        # Broadcast creation
+        try:
+            payload = InboxItemResponse.model_validate(db_item).model_dump(mode="json")
+            msg = WebSocketMessage(type="inbox_item_created", payload=payload)
+            connection_manager.broadcast_to_user(str(user_id), msg)
+        except Exception as e:
+            logger.error(e, exc_info=True)
+
         return db_item
         
     except HTTPException:
@@ -196,7 +207,15 @@ def update_inbox_item(
         # Save changes
         db.commit()
         db.refresh(existing_item)
-        
+
+        # Broadcast update
+        try:
+            payload = InboxItemResponse.model_validate(existing_item).model_dump(mode="json")
+            msg = WebSocketMessage(type="inbox_item_updated", payload=payload)
+            connection_manager.broadcast_to_user(str(user_id), msg)
+        except Exception as e:
+            logger.error(e, exc_info=True)
+
         return existing_item
         
     except HTTPException:
@@ -231,7 +250,15 @@ def delete_inbox_item(db: Session, user_id: uuid.UUID, item_id: uuid.UUID) -> bo
         # Delete the item
         db.delete(existing_item)
         db.commit()
-        
+
+        # Broadcast deletion
+        try:
+            payload = {"inbox_item_id": str(item_id)}
+            msg = WebSocketMessage(type="inbox_item_deleted", payload=payload)
+            connection_manager.broadcast_to_user(str(user_id), msg)
+        except Exception as e:
+            logger.error(e, exc_info=True)
+
         return True
         
     except Exception as e:
@@ -275,6 +302,24 @@ def bulk_update_inbox_item_status(
         result = db.execute(stmt)
         db.commit()
         
+        # Efficiently fetch updated items in a single query to avoid per-item DB calls
+        try:
+            sel = select(InboxItems).where(
+                InboxItems.user_id == user_id,
+                InboxItems.id.in_(item_ids)
+            )
+            result_items = db.execute(sel)
+            items = result_items.scalars().all()
+            for item in items:
+                try:
+                    payload = InboxItemResponse.model_validate(item).model_dump(mode="json")
+                    msg = WebSocketMessage(type="inbox_item_updated", payload=payload)
+                    connection_manager.broadcast_to_user(str(user_id), msg)
+                except Exception as e:
+                    logger.error(e, exc_info=True)
+        except Exception as e:
+            logger.error("Failed fetching items after bulk update", exc_info=True)
+
         return result.rowcount
         
     except Exception as e:
@@ -377,7 +422,17 @@ def convert_inbox_item_to_event(db: Session, user_id: uuid.UUID, conversion_data
         
         db.execute(update_stmt)
         db.commit()
-        
+
+        # Broadcast inbox item updated
+        try:
+            refreshed_item = get_inbox_item(db, user_id, inbox_item.id)
+            if refreshed_item is not None:
+                payload = InboxItemResponse.model_validate(refreshed_item).model_dump(mode="json")
+                msg = WebSocketMessage(type="inbox_item_updated", payload=payload)
+                connection_manager.broadcast_to_user(str(user_id), msg)
+        except Exception as e:
+            logger.error(e, exc_info=True)
+
         # Re-query the created event to return a fresh instance
         event_stmt = select(Events).where(
             Events.id == created_event_id,

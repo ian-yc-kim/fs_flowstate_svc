@@ -10,7 +10,9 @@ from sqlalchemy import select, and_, not_
 from sqlalchemy.orm import Session
 
 from fs_flowstate_svc.models.flowstate_models import Events, ReminderSettings
-from fs_flowstate_svc.schemas.event_schemas import EventCreate, EventUpdate, EventFilter
+from fs_flowstate_svc.schemas.event_schemas import EventCreate, EventUpdate, EventFilter, EventResponse
+from fs_flowstate_svc.schemas.websocket_schemas import WebSocketMessage
+from fs_flowstate_svc.api.websocket_router import connection_manager
 
 logger = logging.getLogger(__name__)
 
@@ -71,18 +73,33 @@ def _check_conflicts(db: Session, user_id: UUID, start: datetime, end: datetime,
 
 
 def _publish_event_created(event: Events) -> None:
-    """Placeholder function for publishing event created events."""
-    logger.info(f"Event created: {event.id} - {event.title}")
+    """Publish event created message to the owning user's websockets."""
+    try:
+        payload = EventResponse.model_validate(event).model_dump(mode="json")
+        msg = WebSocketMessage(type="event_created", payload=payload)
+        connection_manager.broadcast_to_user(str(event.user_id), msg)
+    except Exception as e:
+        logger.error(e, exc_info=True)
 
 
 def _publish_event_updated(event: Events) -> None:
-    """Placeholder function for publishing event updated events."""
-    logger.info(f"Event updated: {event.id} - {event.title}")
+    """Publish event updated message to the owning user's websockets."""
+    try:
+        payload = EventResponse.model_validate(event).model_dump(mode="json")
+        msg = WebSocketMessage(type="event_updated", payload=payload)
+        connection_manager.broadcast_to_user(str(event.user_id), msg)
+    except Exception as e:
+        logger.error(e, exc_info=True)
 
 
-def _publish_event_deleted(event_id: UUID) -> None:
-    """Placeholder function for publishing event deleted events."""
-    logger.info(f"Event deleted: {event_id}")
+def _publish_event_deleted(event_id: UUID, user_id: UUID) -> None:
+    """Publish event deleted message to the owning user's websockets."""
+    try:
+        payload = {"event_id": str(event_id)}
+        msg = WebSocketMessage(type="event_deleted", payload=payload)
+        connection_manager.broadcast_to_user(str(user_id), msg)
+    except Exception as e:
+        logger.error(e, exc_info=True)
 
 
 def create_event(db: Session, user_id: UUID, event_data: EventCreate) -> Events:
@@ -376,7 +393,7 @@ def delete_event(db: Session, event_id: UUID, user_id: UUID) -> None:
         db.commit()
         
         # Publish event deleted
-        _publish_event_deleted(event_id)
+        _publish_event_deleted(event_id, user_id)
         
     except HTTPException:
         raise

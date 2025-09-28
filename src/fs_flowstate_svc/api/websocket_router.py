@@ -3,7 +3,7 @@ import json
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends
 
@@ -19,18 +19,44 @@ websocket_router = APIRouter()
 
 
 class ConnectionManager:
-    """Manage active websocket connections per user and track last pong timestamps."""
+    """Manage active websocket connections per user and track last pong timestamps.
+
+    Improvements:
+    - Track per-WebSocket event loop when connections are added.
+    - Maintain a reverse mapping from ws id to owning user_id to avoid scanning all users
+      when cleaning up a failed connection (performance improvement).
+    - When broadcasting from sync contexts, schedule per-connection run_coroutine_threadsafe
+      onto the specific loop that services that WebSocket. This avoids relying on a single
+      stored server loop which may become stale/closed across test lifecycles.
+    """
 
     def __init__(self) -> None:
         # registry: user_id (str) -> list of WebSocket objects
         self.registry: Dict[str, List[WebSocket]] = defaultdict(list)
-        # last_pong: (user_id, ws_id) -> datetime
+        # last_pong: user_id -> (ws_id -> datetime)
         self.last_pong: Dict[str, Dict[int, datetime]] = defaultdict(dict)
+        # per-ws loop mapping: user_id -> (ws_id -> loop)
+        self._ws_loops: Dict[str, Dict[int, asyncio.AbstractEventLoop]] = defaultdict(dict)
+        # reverse mapping: ws_id -> user_id for fast lookup
+        self._ws_to_user: Dict[int, str] = {}
+        # optional stored server loop (legacy fallback)
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     def add(self, user_id: str, ws: WebSocket) -> None:
         try:
             self.registry[user_id].append(ws)
             self.last_pong[user_id][id(ws)] = datetime.utcnow()
+            self._ws_to_user[id(ws)] = user_id
+            # capture the running loop for this websocket connection if available
+            try:
+                loop = asyncio.get_running_loop()
+                self._ws_loops[user_id][id(ws)] = loop
+                # also ensure a module-level server loop is known for fallback
+                if self._loop is None:
+                    self._loop = loop
+            except RuntimeError:
+                # not running in an event loop here; that's fine
+                pass
             logger.info("Added websocket for user %s. Connections: %d", user_id, len(self.registry[user_id]))
         except Exception as e:
             logger.error(e, exc_info=True)
@@ -42,9 +68,15 @@ class ConnectionManager:
             if ws in conns:
                 conns.remove(ws)
             self.last_pong[user_id].pop(id(ws), None)
+            # remove per-ws loop tracking if present
+            if id(ws) in self._ws_loops.get(user_id, {}):
+                self._ws_loops[user_id].pop(id(ws), None)
+            # remove reverse mapping
+            self._ws_to_user.pop(id(ws), None)
             if not conns:
                 self.registry.pop(user_id, None)
                 self.last_pong.pop(user_id, None)
+                self._ws_loops.pop(user_id, None)
             logger.info("Removed websocket for user %s. Remaining: %d", user_id, len(self.registry.get(user_id, [])))
         except Exception as e:
             logger.error(e, exc_info=True)
@@ -67,6 +99,131 @@ class ConnectionManager:
 
     def last_pong_for(self, user_id: str, ws: WebSocket) -> datetime:
         return self.last_pong.get(user_id, {}).get(id(ws), datetime.utcfromtimestamp(0))
+
+    async def _send_single(self, ws: WebSocket, message: WebSocketMessage) -> None:
+        """Send a single message to a websocket. If it fails, remove the connection."""
+        try:
+            # Ensure payload is JSON-serializable. Use Pydantic json-mode dump when available.
+            if hasattr(message, "model_dump"):
+                try:
+                    payload = message.model_dump(mode="json")
+                except TypeError:
+                    # Older pydantic versions or unexpected signature: fallback
+                    payload = message.model_dump()
+            else:
+                payload = message
+            await ws.send_json(payload)
+        except Exception:
+            logger.error("Error sending websocket message to single connection, removing", exc_info=True)
+            # Best-effort remove; use reverse mapping to avoid scanning all users
+            try:
+                uid = self._ws_to_user.get(id(ws))
+                if uid:
+                    try:
+                        self.remove(uid, ws)
+                    except Exception:
+                        logger.error("Failed removing dead websocket via reverse mapping", exc_info=True)
+                else:
+                    # Fallback: attempt a limited scan (very rare) but avoid full expensive operations
+                    for uid_scan, conns in list(self.registry.items()):
+                        if ws in conns:
+                            try:
+                                self.remove(uid_scan, ws)
+                            except Exception:
+                                logger.error("Failed removing dead websocket during fallback scan", exc_info=True)
+                            break
+            except Exception:
+                logger.error("Failed cleanup after send_single failure", exc_info=True)
+
+    async def _broadcast(self, user_id: str, message: WebSocketMessage) -> None:
+        """Internal async broadcast: send message to all active websockets for user."""
+        conns = list(self.registry.get(user_id, []))
+        for ws in conns:
+            try:
+                await self._send_single(ws, message)
+            except Exception:
+                # _send_single already logs and removes; continue
+                pass
+
+    def broadcast_to_user(self, user_id: str, message: WebSocketMessage) -> None:
+        """Schedule broadcasting to a user's active websockets.
+
+        Strategy:
+        - Prefer scheduling run_coroutine_threadsafe on each connection's captured loop.
+        - If a connection has no loop or its loop is closed, skip that connection.
+        - If no per-connection loops available, fall back to scheduling the whole broadcast
+          on a stored server loop (if present and running).
+        - As a last resort, try to schedule on current running loop if caller is in an event loop.
+        - Any failure to schedule will be logged but will not raise.
+        """
+        try:
+            conns = list(self.registry.get(user_id, []))
+            if not conns:
+                logger.debug("No active connections for user %s; nothing to broadcast", user_id)
+                return
+
+            scheduled = False
+            # Try per-connection loops first
+            for ws in conns:
+                loop = self._ws_loops.get(user_id, {}).get(id(ws))
+                if loop is not None:
+                    try:
+                        if not loop.is_closed():
+                            fut = asyncio.run_coroutine_threadsafe(self._send_single(ws, message), loop)
+
+                            def _cb(f):
+                                try:
+                                    f.result()
+                                except Exception:
+                                    logger.error("Per-connection broadcast task failed", exc_info=True)
+
+                            fut.add_done_callback(_cb)
+                            scheduled = True
+                            continue
+                        else:
+                            # drop mapping for closed loop
+                            logger.debug("Per-connection loop closed for user %s, ws %s", user_id, id(ws))
+                            self._ws_loops[user_id].pop(id(ws), None)
+                    except Exception:
+                        logger.warning("Per-connection scheduling failed, will try other mechanisms", exc_info=True)
+                        # fallthrough to other scheduling attempts
+
+            if scheduled:
+                return
+
+            # If no per-connection scheduling succeeded, try stored server loop
+            if self._loop is not None:
+                try:
+                    if not self._loop.is_closed():
+                        fut = asyncio.run_coroutine_threadsafe(self._broadcast(user_id, message), self._loop)
+
+                        def _cb_all(f):
+                            try:
+                                f.result()
+                            except Exception:
+                                logger.error("Broadcast task on stored loop failed", exc_info=True)
+
+                        fut.add_done_callback(_cb_all)
+                        return
+                    else:
+                        logger.warning("Stored event loop is closed, clearing reference")
+                        self._loop = None
+                except Exception:
+                    logger.warning("Stored event loop scheduling failed, clearing reference", exc_info=True)
+                    self._loop = None
+
+            # If caller is in an event loop, schedule directly
+            try:
+                running = asyncio.get_running_loop()
+                running.create_task(self._broadcast(user_id, message))
+                return
+            except RuntimeError:
+                # not in an event loop
+                pass
+
+            logger.warning("No available event loop; dropping broadcast for user %s", user_id)
+        except Exception as e:
+            logger.error(e, exc_info=True)
 
 
 # module-level manager used by app and tests
@@ -138,6 +295,16 @@ async def websocket_sync(websocket: WebSocket, token: str = Query(None), db=Depe
 
         # Accept connection
         await websocket.accept()
+
+        # ensure manager has server loop reference
+        try:
+            if connection_manager._loop is None:
+                # Use running loop at the time of accepting connection
+                connection_manager._loop = asyncio.get_running_loop()
+        except Exception:
+            # if get_running_loop fails, continue without loop
+            logger.error("Failed to set connection manager event loop", exc_info=True)
+
         connection_manager.add(str(user.id), websocket)
 
         # Start ping loop
