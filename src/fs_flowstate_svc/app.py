@@ -14,6 +14,22 @@ logger = logging.getLogger("fs_flowstate_svc.app")
 # Create FastAPI app with debug disabled so exception handlers run in tests
 app = FastAPI(debug=False)
 
+# Middleware-level catch-all to ensure any unhandled exception is converted
+# into a JSONResponse and logged. This prevents TestClient from re-raising
+# server exceptions during tests and guarantees a consistent 500 response.
+@app.middleware("http")
+async def catch_exceptions_middleware(request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        # Log critically with traceback
+        logger.critical(f"Unhandled Exception: {exc}", exc_info=True)
+        # Return standardized 500 response
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Internal Server Error"},
+        )
+
 # Exception handlers
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc: HTTPException):
@@ -36,6 +52,9 @@ async def validation_exception_handler(request, exc: RequestValidationError):
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request, exc: Exception):
+    # Keep this handler for completeness; middleware above acts as an additional
+    # guard that ensures TestClient receives a proper response even if some
+    # internal path bypasses the handler registration.
     logger.critical(f"Unhandled Exception: {exc}", exc_info=True)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
