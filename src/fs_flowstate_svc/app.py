@@ -6,6 +6,7 @@ from starlette.responses import JSONResponse
 from fs_flowstate_svc.api.auth_router import auth_router
 from fs_flowstate_svc.api.event_router import event_router
 from fs_flowstate_svc.api.inbox_router import inbox_router
+from fs_flowstate_svc.api.websocket_router import websocket_router
 
 # Set up logger for this module
 logger = logging.getLogger("fs_flowstate_svc.app")
@@ -44,3 +45,5 @@ async def generic_exception_handler(request, exc: Exception):
 app.include_router(auth_router)
 app.include_router(event_router, prefix="/api")
 app.include_router(inbox_router, prefix="/api")
+# websocket router mounted under /ws
+app.include_router(websocket_router, prefix="/ws")

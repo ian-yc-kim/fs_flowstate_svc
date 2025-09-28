@@ -593,3 +593,164 @@ Authorization: Bearer <access_token>
 - `is_recurring`: boolean - Whether the event is a recurring event (default: false)
 - `event_category`: string (optional) - Optional category for the event. Defaults to inbox item category if not provided
 - `event_metadata`: object (optional) - Optional metadata for the event. The original inbox item ID will be included here automatically
+
+---
+
+## WebSocket API
+
+This section documents the real-time WebSocket API exposed by the FlowState service. The WebSocket endpoint enables live synchronization of events and inbox items between clients and the server.
+
+### Overview
+
+- Top-level WebSocket endpoint: `/ws/sync`
+- Purpose: Real-time data synchronization for event and inbox changes, plus control and heartbeat messages.
+- Multiple concurrent connections per user are supported (e.g., multiple browser tabs or devices).
+- Tests that exercise the implementation live under `tests/api/test_websocket_router.py`.
+
+### Endpoint: /ws/sync
+
+**Method:** WebSocket (GET upgrade)
+
+**Connection URL (example):**
+
+```
+ws://localhost:8000/ws/sync?token={YOUR_JWT_TOKEN}
+```
+
+- token is a JWT access token passed as a query parameter.
+- The JWT access token can be obtained from the standard login endpoint: `POST /users/login` which returns an access_token.
+- Note: REST endpoints typically accept Authorization: Bearer <token> headers. For this WS endpoint the token is passed as a query parameter for the initial handshake.
+
+### Authentication
+
+- JWT authentication is required for the `/ws/sync` endpoint.
+- Clients MUST include a valid JWT as the `token` query parameter when opening the WebSocket.
+- The server validates the token during the initial handshake and will reject the connection (close) if the token is missing or invalid. In the current implementation the server closes with a policy violation / unauthorized code (1008) on invalid/missing tokens.
+- How to obtain a token: call `POST /users/login` and use the returned `access_token`.
+
+### Message Format (Standardized JSON)
+
+All messages exchanged over the WebSocket use a standardized JSON envelope. Both client->server and server->client messages follow the same basic shape.
+
+Example structure:
+
+```json
+{
+  "type": "event_update", // e.g., event_update, inbox_update, ping, pong, ack, error
+  "payload": {
+    // type-specific data
+  }
+}
+```
+
+Common type values and semantics:
+
+- `event_update` — event-related update (client can notify server of changes)
+- `inbox_update` — inbox item updates or actions
+- `ping` — health-check ping message
+- `pong` — pong response to ping
+- `ack` — acknowledgment from server responding to a client message. Example payload: `{ "received_type": "event_update", "status": "ok" }`
+- `error` — error message from server. Example payload: `{ "detail": "invalid_message" }`
+
+Validation and error behavior:
+
+- Invalid JSON or messages that do not match the expected schema will prompt an `error` message from the server with payload.detail set to values such as `invalid_message` or `invalid_json`.
+- Unknown `type` values are responded to with an `error` message of `unknown_type`.
+- Internal server errors in message handling result in `error` messages with `internal_error` detail.
+
+### Connection Lifecycle
+
+- Connect: Client opens a WebSocket to `/ws/sync?token=...`.
+- Auth: Server validates the token before accepting. If token validation fails the server closes the connection (policy violation / 1008 recommended).
+- Accept: On successful validation the server accepts the WebSocket upgrade and registers the connection in its connection registry.
+- Messaging: After accept, client and server exchange JSON messages using the standardized envelope.
+- Disconnection: When a client disconnects or when the server detects an error/heartbeat timeout, the server removes the connection from the registry and cleans up resources.
+- Cleanup codes: The implementation performs a graceful close where possible; heartbeat timeouts trigger a server-side close (custom close code used internally).
+
+### Heartbeat (Ping/Pong)
+
+- The server periodically sends JSON ping messages to clients to verify connection health. The default configuration values are defined in the application's config (see `src/fs_flowstate_svc/config.py`):
+  - WS_PING_INTERVAL_SECONDS: 15
+  - WS_PONG_TIMEOUT_SECONDS: 45
+
+- Server ping message example:
+
+```json
+{ "type": "ping", "payload": {} }
+```
+
+- Clients should respond with a pong message:
+
+```json
+{ "type": "pong", "payload": {} }
+```
+
+- If the server does not receive a pong within WS_PONG_TIMEOUT_SECONDS after sending a ping, it will consider the connection unhealthy and close it.
+- Clients MAY also initiate ping messages and expect a `pong` response.
+
+### Security Considerations
+
+- Use secure WebSocket (wss://) in production to protect JWT tokens in transit.
+- Passing tokens in the query string has inherent exposure risks (e.g., logs, proxy caches). Treat tokens as secrets and avoid logging full URLs containing tokens.
+- Prefer short-lived access tokens and refresh tokens via your standard auth flows.
+- Ensure reverse proxies (NGINX / load balancers) correctly handle WebSocket upgrade headers and terminate TLS properly.
+- Do not persist or display JWT tokens in client logs or dashboards.
+
+### Usage Examples
+
+Python example using the `websockets` library:
+
+```python
+import asyncio
+import json
+import websockets
+
+async def main():
+    token = "YOUR_JWT"
+    url = f"ws://localhost:8000/ws/sync?token={token}"
+    async with websockets.connect(url) as ws:
+        # receive a server ping and respond with pong
+        msg = json.loads(await ws.recv())
+        if msg.get("type") == "ping":
+            await ws.send(json.dumps({"type": "pong", "payload": {}}))
+
+        # send an event update
+        await ws.send(json.dumps({"type": "event_update", "payload": {"id": 1}}))
+        ack = json.loads(await ws.recv())
+        print("ACK:", ack)
+
+asyncio.run(main())
+```
+
+JavaScript (browser) example:
+
+```javascript
+const token = "YOUR_JWT";
+const ws = new WebSocket(`ws://localhost:8000/ws/sync?token=${token}`);
+
+ws.onopen = () => { console.log("connected"); };
+
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === "ping") {
+    ws.send(JSON.stringify({ type: "pong", payload: {} }));
+  } else {
+    console.log("received:", msg);
+  }
+};
+
+ws.onerror = (e) => console.error("ws error", e);
+
+function sendInboxUpdate() {
+  ws.send(JSON.stringify({ type: "inbox_update", payload: { item: 123 } }));
+}
+```
+
+### Testing and Notes to Developers
+
+- The server-side implementation and tests live in `src/fs_flowstate_svc/api/websocket_router.py` and `tests/api/test_websocket_router.py`.
+- Tests assert authentication, message validation, routing (ack), heartbeat (ping/pong), and connection registry behavior.
+- Keep documentation synced with implementation to avoid drift, particularly around the token passing mechanism and heartbeat configuration.
+
+---
+

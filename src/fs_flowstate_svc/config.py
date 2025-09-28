@@ -4,13 +4,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     """Application settings using Pydantic BaseSettings for robust configuration management."""
-    
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore"  # Allow extra fields in environment without validation errors
     )
-    
+
     DATABASE_URL: str = "sqlite:///:memory:"
     SERVICE_PORT: int = 8000
     OPENAI_API_KEY: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
@@ -25,6 +25,10 @@ class Settings(BaseSettings):
             "general": 5
         }
     )
+
+    # WebSocket heartbeat settings (seconds)
+    WS_PING_INTERVAL_SECONDS: int = 15
+    WS_PONG_TIMEOUT_SECONDS: int = 45
 
 
 # Module-level settings instance
