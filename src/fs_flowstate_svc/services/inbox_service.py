@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, update, delete, func
+from sqlalchemy import select, update, delete, func, and_, or_
 from sqlalchemy.orm import Session
 
 from fs_flowstate_svc.models.flowstate_models import InboxItems, Events
@@ -123,24 +123,46 @@ def get_inbox_items(
         # Base query
         query = select(InboxItems).where(InboxItems.user_id == user_id)
         
-        # Apply optional filters
-        if filters.category is not None:
-            query = query.where(InboxItems.category == filters.category.value)
-        
-        if filters.priority_min is not None:
-            query = query.where(InboxItems.priority >= filters.priority_min.value)
-        
-        if filters.priority_max is not None:
-            query = query.where(InboxItems.priority <= filters.priority_max.value)
-        
-        if filters.status is not None:
-            query = query.where(InboxItems.status == filters.status.value)
-        
-        # Apply pagination
-        query = query.offset(skip).limit(limit)
-        
+        clauses = []
+
+        # Categories multi-select
+        if getattr(filters, "categories", None):
+            vals = [c.value for c in filters.categories]
+            if vals:
+                clauses.append(InboxItems.category.in_(vals))
+
+        # Statuses multi-select
+        if getattr(filters, "statuses", None):
+            vals = [s.value for s in filters.statuses]
+            if vals:
+                clauses.append(InboxItems.status.in_(vals))
+
+        # Priorities multi-select takes precedence over min/max
+        if getattr(filters, "priorities", None):
+            vals = [p.value for p in filters.priorities]
+            if vals:
+                clauses.append(InboxItems.priority.in_(vals))
+        else:
+            # Apply min/max only when priorities list not provided
+            if filters.priority_min is not None:
+                clauses.append(InboxItems.priority >= filters.priority_min.value)
+            if filters.priority_max is not None:
+                clauses.append(InboxItems.priority <= filters.priority_max.value)
+
+        # Combine clauses using AND/OR based on filter_logic
+        if clauses:
+            logic = (filters.filter_logic or "AND").upper()
+            if logic == "OR":
+                combined = or_(*clauses)
+            else:
+                combined = and_(*clauses)
+            query = query.where(combined)
+
         # Order by created_at descending (newest first)
         query = query.order_by(InboxItems.created_at.desc())
+
+        # Apply pagination
+        query = query.offset(skip).limit(limit)
         
         result = db.execute(query)
         return result.scalars().all()

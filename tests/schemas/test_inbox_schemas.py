@@ -220,23 +220,26 @@ class TestInboxItemFilter:
         """Test InboxItemFilter with all fields None."""
         filter_obj = InboxItemFilter()
         
-        assert filter_obj.category is None
+        assert filter_obj.categories is None
+        assert filter_obj.priorities is None
         assert filter_obj.priority_min is None
         assert filter_obj.priority_max is None
-        assert filter_obj.status is None
+        assert filter_obj.statuses is None
+        assert filter_obj.filter_logic == "AND"
     
     def test_inbox_item_filter_partial_fields(self):
         """Test InboxItemFilter with some fields provided."""
         filter_obj = InboxItemFilter(
-            category=InboxCategory.TODO,
+            categories=[InboxCategory.TODO],
             priority_min=InboxPriority.P2,
-            status=InboxStatus.PENDING
+            statuses=[InboxStatus.PENDING]
         )
         
-        assert filter_obj.category == InboxCategory.TODO
+        assert filter_obj.categories == [InboxCategory.TODO]
         assert filter_obj.priority_min == InboxPriority.P2
         assert filter_obj.priority_max is None
-        assert filter_obj.status == InboxStatus.PENDING
+        assert filter_obj.statuses == [InboxStatus.PENDING]
+        assert filter_obj.filter_logic == "AND"
     
     def test_inbox_item_filter_priority_range(self):
         """Test InboxItemFilter with priority range."""
@@ -249,6 +252,13 @@ class TestInboxItemFilter:
         assert filter_obj.priority_max == InboxPriority.P4
         assert filter_obj.priority_min.value == 1
         assert filter_obj.priority_max.value == 4
+
+    def test_inbox_item_filter_parses_csv_strings(self):
+        f = InboxItemFilter(categories="TODO,IDEA", statuses="PENDING,DONE", priorities="1,3", filter_logic="or")
+        assert f.categories == [InboxCategory.TODO, InboxCategory.IDEA]
+        assert f.statuses == [InboxStatus.PENDING, InboxStatus.DONE]
+        assert f.priorities == [InboxPriority.P1, InboxPriority.P3]
+        assert f.filter_logic == "OR"
 
 
 class TestInboxItemsBulkUpdate:

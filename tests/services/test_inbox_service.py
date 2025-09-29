@@ -318,7 +318,7 @@ class TestGetInboxItemsFiltering:
         """Test filtering by category."""
         user1, user2, items_user1, items_user2 = self.setup_test_data(db_session)
         
-        filters = inbox_schemas.InboxItemFilter(category=inbox_schemas.InboxCategory.TODO)
+        filters = inbox_schemas.InboxItemFilter(categories=[inbox_schemas.InboxCategory.TODO])
         todo_items = inbox_service.get_inbox_items(db_session, user1.id, filters)
         
         assert len(todo_items) == 2
@@ -330,7 +330,7 @@ class TestGetInboxItemsFiltering:
         """Test filtering by status."""
         user1, user2, items_user1, items_user2 = self.setup_test_data(db_session)
         
-        filters = inbox_schemas.InboxItemFilter(status=inbox_schemas.InboxStatus.PENDING)
+        filters = inbox_schemas.InboxItemFilter(statuses=[inbox_schemas.InboxStatus.PENDING])
         pending_items = inbox_service.get_inbox_items(db_session, user1.id, filters)
         
         assert len(pending_items) == 1
@@ -375,13 +375,42 @@ class TestGetInboxItemsFiltering:
         for item in items:
             assert inbox_schemas.InboxPriority.P2.value <= item.priority <= inbox_schemas.InboxPriority.P3.value
             assert item.user_id == user1.id
-    
+
+    def test_filter_by_multiple_categories_or_logic(self, db_session):
+        """Test multi-select categories combined with OR logic."""
+        user1, user2, items_user1, items_user2 = self.setup_test_data(db_session)
+        # categories TODO or IDEA
+        filters = inbox_schemas.InboxItemFilter(categories=[inbox_schemas.InboxCategory.TODO, inbox_schemas.InboxCategory.IDEA], filter_logic='OR')
+        items = inbox_service.get_inbox_items(db_session, user1.id, filters)
+        # expect TODO and IDEA matches (3 items)
+        assert len(items) == 3
+        assert all(item.user_id == user1.id for item in items)
+
+    def test_filter_by_multiple_statuses_or_logic(self, db_session):
+        """Test multi-select statuses combined with OR logic."""
+        user1, user2, items_user1, items_user2 = self.setup_test_data(db_session)
+        filters = inbox_schemas.InboxItemFilter(statuses=[inbox_schemas.InboxStatus.PENDING, inbox_schemas.InboxStatus.DONE], filter_logic='OR')
+        items = inbox_service.get_inbox_items(db_session, user1.id, filters)
+        # expect items that are PENDING or DONE (2 items)
+        assert len(items) == 2
+        assert all(item.user_id == user1.id for item in items)
+
+    def test_filter_by_priorities_list_overrides_min_max(self, db_session):
+        """Providing priorities list should ignore priority_min/max."""
+        user1, user2, items_user1, items_user2 = self.setup_test_data(db_session)
+        # Provide priorities list [1,3] but also min/max that would include others
+        filters = inbox_schemas.InboxItemFilter(priorities=[inbox_schemas.InboxPriority.P1, inbox_schemas.InboxPriority.P3], priority_min=inbox_schemas.InboxPriority.P5, priority_max=inbox_schemas.InboxPriority.P5)
+        items = inbox_service.get_inbox_items(db_session, user1.id, filters)
+        # only P1 and P3 should be returned -> 2 items
+        assert len(items) == 2
+        assert all(item.priority in (1, 3) for item in items)
+
     def test_filter_combined_and_pagination_skip_limit(self, db_session):
         """Test combined filters with pagination."""
         user1, user2, items_user1, items_user2 = self.setup_test_data(db_session)
         
-        # Filter for TODO items only
-        filters = inbox_schemas.InboxItemFilter(category=inbox_schemas.InboxCategory.TODO)
+        # Filter for TODO items only with AND logic
+        filters = inbox_schemas.InboxItemFilter(categories=[inbox_schemas.InboxCategory.TODO], filter_logic='AND')
         
         # Get first item (skip=0, limit=1)
         first_page = inbox_service.get_inbox_items(db_session, user1.id, filters, skip=0, limit=1)
@@ -548,7 +577,7 @@ class TestSchemaValidationEdgeCases:
         })
         
         # Test each filter type
-        category_filter = inbox_schemas.InboxItemFilter(category=inbox_schemas.InboxCategory.IDEA)
+        category_filter = inbox_schemas.InboxItemFilter(categories=[inbox_schemas.InboxCategory.IDEA])
         category_results = inbox_service.get_inbox_items(db_session, user.id, category_filter)
         assert len(category_results) == 1
         
@@ -556,6 +585,6 @@ class TestSchemaValidationEdgeCases:
         priority_results = inbox_service.get_inbox_items(db_session, user.id, priority_filter)
         assert len(priority_results) == 1
         
-        status_filter = inbox_schemas.InboxItemFilter(status=inbox_schemas.InboxStatus.DONE)
+        status_filter = inbox_schemas.InboxItemFilter(statuses=[inbox_schemas.InboxStatus.DONE])
         status_results = inbox_service.get_inbox_items(db_session, user.id, status_filter)
         assert len(status_results) == 1

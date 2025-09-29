@@ -4,7 +4,7 @@ import logging
 import uuid
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
@@ -111,6 +111,7 @@ def get_inbox_item(
 
 @inbox_router.get("/", response_model=List[inbox_schemas.InboxItemResponse])
 def list_inbox_items(
+    request: Request,
     filters: inbox_schemas.InboxItemFilter = Depends(),
     skip: int = 0,
     limit: int = 100,
@@ -118,18 +119,106 @@ def list_inbox_items(
     db: Session = Depends(get_db)
 ):
     """Retrieve inbox items with optional filtering.
-    
-    Args:
-        filters: Filter criteria
-        skip: Number of items to skip
-        limit: Maximum number of items to return
-        current_user: Current authenticated user (injected dependency)
-        db: Database session
-        
-    Returns:
-        List of inbox item responses
+
+    Note: Accepts multi-select query params as CSV (e.g., categories=TODO,IDEA).
+    If FastAPI doesn't populate the Pydantic fields as expected from query params,
+    we attempt to normalize them from raw query params here before calling the service.
+    Also accept legacy singular params 'category' and 'status' for backward compatibility.
     """
     try:
+        # Attempt to normalize query params into the filters object when needed.
+        # This provides resilience for different ways FastAPI may provide the values.
+        try:
+            qs = request.query_params
+            # Helper to parse CSV into enum list using the same logic as schemas validators
+            def _parse_csv_enum_list(raw: str, enum_cls):
+                if raw is None:
+                    return None
+                s = raw.strip()
+                if s == "":
+                    return None
+                parts = [p.strip() for p in s.split(",") if p.strip()]
+                result = []
+                for p in parts:
+                    try:
+                        # allow numeric priorities
+                        if issubclass(enum_cls, int):
+                            # Not typical; kept for safety
+                            result.append(enum_cls(int(p)))
+                        else:
+                            result.append(enum_cls(p))
+                    except Exception:
+                        # try numeric conversion for priority-like enums
+                        try:
+                            result.append(enum_cls(int(p)))
+                        except Exception:
+                            raise
+                return result or None
+
+            # Only override if Pydantic did not parse them
+            if not getattr(filters, "categories", None) and "categories" in qs:
+                parsed = _parse_csv_enum_list(qs.get("categories"), inbox_schemas.InboxCategory)
+                filters.categories = parsed
+
+            # Back-compat: accept singular 'category' param
+            if not getattr(filters, "categories", None) and "category" in qs:
+                raw_c = qs.get("category")
+                if raw_c is not None and raw_c.strip() != "":
+                    try:
+                        filters.categories = [inbox_schemas.InboxCategory(raw_c.strip())]
+                    except Exception:
+                        # fallback to parsing CSV
+                        parsed = _parse_csv_enum_list(raw_c, inbox_schemas.InboxCategory)
+                        filters.categories = parsed
+
+            if not getattr(filters, "statuses", None) and "statuses" in qs:
+                parsed = _parse_csv_enum_list(qs.get("statuses"), inbox_schemas.InboxStatus)
+                filters.statuses = parsed
+
+            # Back-compat: accept singular 'status' param
+            if not getattr(filters, "statuses", None) and "status" in qs:
+                raw_s = qs.get("status")
+                if raw_s is not None and raw_s.strip() != "":
+                    try:
+                        filters.statuses = [inbox_schemas.InboxStatus(raw_s.strip())]
+                    except Exception:
+                        parsed = _parse_csv_enum_list(raw_s, inbox_schemas.InboxStatus)
+                        filters.statuses = parsed
+
+            if not getattr(filters, "priorities", None) and "priorities" in qs:
+                # priorities are numeric or enum names
+                raw = qs.get("priorities")
+                if raw is not None:
+                    parts = [p.strip() for p in raw.split(",") if p.strip()]
+                    parsed = []
+                    for p in parts:
+                        if p.isdigit():
+                            parsed.append(inbox_schemas.InboxPriority(int(p)))
+                        else:
+                            parsed.append(inbox_schemas.InboxPriority(p))
+                    filters.priorities = parsed or None
+
+            # Back-compat: accept singular 'priority' param
+            if not getattr(filters, "priorities", None) and "priority" in qs:
+                raw = qs.get("priority")
+                if raw is not None and raw.strip() != "":
+                    parts = [p.strip() for p in raw.split(",") if p.strip()]
+                    parsed = []
+                    for p in parts:
+                        if p.isdigit():
+                            parsed.append(inbox_schemas.InboxPriority(int(p)))
+                        else:
+                            parsed.append(inbox_schemas.InboxPriority(p))
+                    filters.priorities = parsed or None
+
+            # Normalize filter_logic if provided raw
+            if (filters.filter_logic is None or filters.filter_logic == "AND") and "filter_logic" in qs:
+                raw_logic = qs.get("filter_logic")
+                if raw_logic:
+                    filters.filter_logic = "OR" if raw_logic.strip().upper() == "OR" else "AND"
+        except Exception as e:
+            logger.error(f"Error normalizing query params for filters: {e}", exc_info=True)
+
         items = inbox_service.get_inbox_items(db, current_user.id, filters, skip, limit)
         return [inbox_schemas.InboxItemResponse.model_validate(item) for item in items]
     except Exception as e:

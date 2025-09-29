@@ -193,15 +193,15 @@ class TestInboxAPI:
             payload = create_inbox_item_payload(**item_data)
             client.post("/api/inbox/", json=payload, headers=headers)
         
-        # Test: Filter by category
-        response = client.get("/api/inbox/?category=TODO", headers=headers)
+        # Test: Filter by categories (single)
+        response = client.get("/api/inbox/?categories=TODO", headers=headers)
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 3  # 3 TODO items
         assert all(item["category"] == "TODO" for item in data)
         
-        # Test: Filter by status
-        response = client.get("/api/inbox/?status=PENDING", headers=headers)
+        # Test: Filter by statuses (single)
+        response = client.get("/api/inbox/?statuses=PENDING", headers=headers)
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 3  # 3 PENDING items
@@ -214,8 +214,8 @@ class TestInboxAPI:
         assert len(data) == 3  # priorities 1, 2, 3
         assert all(1 <= item["priority"] <= 3 for item in data)
         
-        # Test: Combined filters
-        response = client.get("/api/inbox/?category=TODO&status=PENDING", headers=headers)
+        # Test: Combined filters (AND)
+        response = client.get("/api/inbox/?categories=TODO&statuses=PENDING", headers=headers)
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 2  # 2 TODO PENDING items
